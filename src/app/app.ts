@@ -26,6 +26,7 @@ import {
 type ListingFilter = 'all' | 'withReviews' | 'withoutReviews';
 
 const RAG_CHAT_ENDPOINT = '/api/rag-chat';
+const TELEMETRY_ENDPOINT = '/api/telemetry';
 const OLLAMA_MODEL_NAME = 'llama3.1:8b';
 
 interface ListingPreview {
@@ -198,6 +199,7 @@ export class App implements OnInit, OnDestroy {
       this.selectedId.set(initialListing?.id ?? '');
       if (initialListing) {
         await this.loadListingImages(initialListing);
+        this.emitModelTelemetry('listing-inicial');
       }
       this.resetChatForListing(false);
     } catch (error) {
@@ -215,7 +217,9 @@ export class App implements OnInit, OnDestroy {
     this.selectedId.set(listingId);
     const listing = this.selectedListing();
     if (listing) {
-      void this.loadListingImages(listing);
+      void this.loadListingImages(listing).finally(() => {
+        this.emitModelTelemetry('listing-seleccionado');
+      });
     }
     this.question.set('¿Qué opinan los huéspedes sobre la limpieza y la ubicación?');
     this.resetChatForListing(true);
@@ -453,6 +457,37 @@ export class App implements OnInit, OnDestroy {
       return `No se pudo conectar con Ollama. Verifica que Ollama esté ejecutándose y que el modelo ${OLLAMA_MODEL_NAME} esté instalado.`;
     }
     return `No se pudo consultar Ollama/RAG: ${raw}`;
+  }
+
+  private emitModelTelemetry(event: string): void {
+    const listing = this.selectedListing();
+    const tabular = this.tabularScore();
+    const vision = this.visionScore();
+    const reviews = this.reviewScore();
+    const fusion = this.fusion();
+    if (!listing || !tabular || !vision || !reviews || !fusion) {
+      return;
+    }
+
+    void fetch(TELEMETRY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event,
+        listingId: listing.id,
+        title: listing.title,
+        tabularScore: tabular.score,
+        tabularLabel: tabular.label,
+        visionScore: vision.score,
+        visionLabel: vision.label,
+        reviewScore: reviews.score,
+        reviewLabel: reviews.label,
+        fusionScore: fusion.score,
+        fusionLabel: fusion.label,
+      }),
+    }).catch(() => {
+      // La telemetria es solo para monitoreo; la demo sigue funcionando si el backend no responde.
+    });
   }
 
   private createChatMessageId(role: ChatMessage['role']): string {

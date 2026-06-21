@@ -34,6 +34,11 @@ function logRequest(request, status, detail = '') {
   console.log(`[${timestamp}] ${request.method} ${request.url} -> ${status}${detail ? ` | ${detail}` : ''}`);
 }
 
+function logEvent(scope, detail = '') {
+  const timestamp = new Date().toLocaleTimeString('es-PE', { hour12: false });
+  console.log(`[${timestamp}] ${scope}${detail ? ` | ${detail}` : ''}`);
+}
+
 function sendOptions(response) {
   response.writeHead(204, {
     'Access-Control-Allow-Origin': '*',
@@ -320,10 +325,14 @@ async function handleRagChat(request, response) {
   const evidence = retrieveEvidence(listing, question);
   const retrievalTopic = inferRetrievalTopic(question);
   const prompt = buildPrompt({ listing, question, facts, evidence });
+  logEvent('CHATBOT pregunta', `listing ${listingId}; "${question.slice(0, 140)}"`);
 
   try {
     const answer = await callOllama(prompt);
-    logRequest(request, 200, `ollama-rag ${OLLAMA_MODEL}; listing ${listingId}; evidencia ${evidence.length}`);
+    logEvent(
+      'CHATBOT respuesta',
+      `modo ollama-rag; modelo ${OLLAMA_MODEL}; facts ${facts.length}; reseñas ${evidence.length}; criterio ${retrievalTopic}`,
+    );
     sendJson(response, 200, {
       answer,
       facts: facts.slice(0, 4),
@@ -335,7 +344,7 @@ async function handleRagChat(request, response) {
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'error desconocido';
-    logRequest(request, 200, `fallback; listing ${listingId}; razon: ${friendlyOllamaMessage(reason)}`);
+    logEvent('CHATBOT fallback', `listing ${listingId}; razon: ${friendlyOllamaMessage(reason)}`);
     sendJson(response, 200, {
       ...buildExtractiveFallback({ listing, question, facts, evidence, reason }),
       retrievalTopic,
@@ -351,7 +360,6 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'GET' && request.url === '/api/health') {
-      logRequest(request, 200, 'health');
       sendJson(response, 200, {
         ok: true,
         model: OLLAMA_MODEL,
@@ -363,6 +371,18 @@ const server = createServer(async (request, response) => {
 
     if (request.method === 'POST' && request.url === '/api/rag-chat') {
       await handleRagChat(request, response);
+      return;
+    }
+
+    if (request.method === 'POST' && request.url === '/api/telemetry') {
+      const body = await readJsonBody(request);
+      logEvent(
+        'MODELOS demo',
+        `${body.event ?? 'evento'}; listing ${body.listingId ?? 'n/a'}; ` +
+          `MLP ${body.tabularScore ?? 'n/a'}; CNN ${body.visionScore ?? 'n/a'}; ` +
+          `LLM ${body.reviewScore ?? 'n/a'}; fusion ${body.fusionScore ?? 'n/a'}`,
+      );
+      sendJson(response, 200, { ok: true });
       return;
     }
 
