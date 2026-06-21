@@ -42,7 +42,7 @@ textarea {
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 340px minmax(0, 1fr);
 }
 
 .sidebar {
@@ -208,11 +208,11 @@ textarea {
 
 .listing-row {
   width: 100%;
-  min-height: 110px;
+  min-height: 118px;
   display: grid;
-  grid-template-columns: 78px minmax(0, 1fr) 66px;
-  gap: 12px;
-  align-items: center;
+  grid-template-columns: 74px minmax(0, 1fr) 58px;
+  gap: 10px;
+  align-items: start;
   padding: 10px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -229,8 +229,8 @@ textarea {
 }
 
 .listing-row img {
-  width: 78px;
-  height: 78px;
+  width: 74px;
+  height: 74px;
   object-fit: cover;
   border-radius: 6px;
 }
@@ -238,23 +238,47 @@ textarea {
 .row-main {
   min-width: 0;
   display: grid;
-  gap: 5px;
+  gap: 4px;
+  align-content: start;
 }
 
 .row-main strong {
+  min-width: 0;
   overflow: hidden;
   display: -webkit-box;
   font-size: 13px;
   line-height: 1.25;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+.row-main small {
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  line-height: 1.25;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+.row-main small:last-child {
+  -webkit-line-clamp: 2;
 }
 
 .row-score {
+  min-width: 58px;
   display: grid;
   justify-items: end;
   gap: 6px;
+  align-self: center;
   white-space: nowrap;
+}
+
+.row-score strong {
+  font-size: 15px;
+  line-height: 1.1;
 }
 
 .export-button,
