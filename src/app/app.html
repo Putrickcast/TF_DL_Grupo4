@@ -576,13 +576,22 @@
           </article>
 
           <article class="coverage-card">
-              <h2>Integración multimodal</h2>
-              <ul>
+            <h2>Integración multimodal</h2>
+            <ul>
               <li>LLM/chatbot: funcional con RAG por alojamiento seleccionado + Ollama local.</li>
               <li>MLP tabular: pendiente de integrar modelo entrenado; la demo muestra un baseline auditable.</li>
               <li>CNN visual: pendiente de integrar modelo entrenado; la demo muestra análisis visual heurístico.</li>
               <li>Fusión multimodal: baseline demostrativo con pesos configurados en el dataset.</li>
-              </ul>
+            </ul>
+            <div class="academic-note">
+              <strong>Conclusión para exposición</strong>
+              <p>
+                El módulo LLM/RAG sí está funcional con Ollama. Los módulos CNN y MLP están
+                representados como baselines explicables. La arquitectura ya deja los puntos de
+                reemplazo para integrar una CNN entrenada y un MLP entrenado sin cambiar la
+                interfaz ni la fusión final.
+              </p>
+            </div>
             @if (meta(); as dataMeta) {
               <p class="source-note">
                 Fuente: {{ dataMeta.generatedFromSheets.join(' + ') }} · {{ dataMeta.listingCount }} listados ·
