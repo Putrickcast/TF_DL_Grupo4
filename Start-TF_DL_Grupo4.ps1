@@ -141,9 +141,11 @@ Start-Sleep -Seconds 3
 
 New-ModuleWindow -Title "TF_DL_Grupo4 - Angular Frontend" -Command @"
 Write-Host 'Iniciando Angular en http://127.0.0.1:4200'
-Write-Host 'El proxy /api apunta al backend RAG local.'
+Write-Host 'Modo demo estable: compila Angular y sirve dist/TF_DL_Grupo4 con proxy /api.'
 Write-Host ''
-& '$Pnpm' exec ng serve --host 127.0.0.1 --port 4200 --proxy-config proxy.conf.json --allowed-hosts=true
+& '$Pnpm' run build
+if (`$LASTEXITCODE -ne 0) { throw 'Build de Angular falló.' }
+& node server/demo-server.mjs
 "@
 
 Start-Sleep -Seconds 6
