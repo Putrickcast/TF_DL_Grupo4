@@ -1,4 +1,4 @@
-# HombreMarried - demo final Angular
+# TF_DL_Grupo4 - demo final Angular
 
 Demo multimodal para el Trabajo Final de Deep Learning: evaluacion de listados Airbnb en Barranco, Lima.
 
@@ -31,7 +31,7 @@ Si Ollama falla, la app usa fallback extractivo local y lo marca visualmente com
 Abre una terminal en la carpeta del proyecto:
 
 ```bash
-cd "C:\Users\andre\OneDrive\Documentos\Deep Learning\HombreMarried-demo-final"
+cd "C:\Users\andre\OneDrive\Documentos\Deep Learning\TF_DL_Grupo4"
 ```
 
 Instala dependencias:
