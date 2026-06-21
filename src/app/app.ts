@@ -1,0 +1,559 @@
+import { CommonModule } from '@angular/common';
+import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import {
+  ChatResult,
+  ImageManifest,
+  ImageAnalysis,
+  Listing,
+  ListingDataset,
+  ModelScore,
+  ScoreFactor,
+} from './models';
+import {
+  analyzeImagePixels,
+  answerQuestion,
+  buildCohortStats,
+  fuseScores,
+  normalize,
+  roundOne,
+  scoreImageMetrics,
+  scoreReviews,
+  scoreTabular,
+  snippet,
+} from './scoring';
+
+type ListingFilter = 'all' | 'withReviews' | 'withoutReviews';
+
+const RAG_CHAT_ENDPOINT = 'http://127.0.0.1:8787/api/rag-chat';
+const OLLAMA_MODEL_NAME = 'llama3.1:8b';
+
+interface ListingPreview {
+  listing: Listing;
+  tabularScore: number;
+}
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  result?: ChatResult;
+  loading?: boolean;
+  error?: string;
+}
+
+@Component({
+  selector: 'app-root',
+  imports: [CommonModule, FormsModule],
+  templateUrl: './app.html',
+  styleUrl: './app.css',
+})
+export class App implements OnInit, OnDestroy {
+  readonly dataset = signal<ListingDataset | null>(null);
+  readonly selectedId = signal('');
+  readonly searchTerm = signal('');
+  readonly filter = signal<ListingFilter>('all');
+  readonly question = signal('¿Qué opinan los huéspedes sobre la limpieza y la ubicación?');
+  readonly chatResult = signal<ChatResult | null>(null);
+  readonly chatMessages = signal<ChatMessage[]>([]);
+  readonly chatLoading = signal(false);
+  readonly chatError = signal('');
+  readonly activeSection = signal('datos');
+  readonly imageManifest = signal<ImageManifest | null>(null);
+  readonly listingImages = signal<ImageAnalysis[]>([]);
+  readonly imageLoadError = signal('');
+  readonly uploadedImages = signal<ImageAnalysis[]>([]);
+  readonly loading = signal(true);
+  readonly loadError = signal('');
+  readonly ragModelName = OLLAMA_MODEL_NAME;
+
+  private readonly uploadedObjectUrls: string[] = [];
+  private imageLoadSequence = 0;
+  private chatSequence = 0;
+
+  readonly listings = computed(() => this.dataset()?.listings ?? []);
+  readonly meta = computed(() => this.dataset()?.meta ?? null);
+  readonly cohort = computed(() => buildCohortStats(this.listings()));
+
+  readonly selectedListing = computed(() => {
+    const listings = this.listings();
+    return listings.find((listing) => listing.id === this.selectedId()) ?? listings[0] ?? null;
+  });
+
+  readonly tabularScore = computed(() => {
+    const listing = this.selectedListing();
+    return listing ? scoreTabular(listing, this.cohort()) : null;
+  });
+
+  readonly reviewScore = computed(() => {
+    const listing = this.selectedListing();
+    return listing ? scoreReviews(listing) : null;
+  });
+
+  readonly visionImages = computed(() => {
+    const uploaded = this.uploadedImages();
+    return uploaded.length > 0 ? uploaded : this.listingImages();
+  });
+
+  readonly visionScore = computed<ModelScore | null>(() => {
+    const images = this.visionImages();
+    if (images.length === 0) {
+      return {
+        score: 50,
+        confidence: 15,
+        label: 'Sin foto',
+        factors: [
+          { label: 'Cobertura fotos', value: 0, detail: 'No hay imagen local para este ID' },
+          { label: 'Confianza visual', value: 15, detail: 'Pendiente de captura real' },
+        ],
+        notes: [
+          'No se encontro foto real descargada para este ID.',
+          'Coloca imagenes en public/img/<ID Airbnb>/ y actualiza public/data/image-manifest.json.',
+        ],
+      };
+    }
+
+    const metrics = averageImageMetrics(images);
+    const score = roundOne(images.reduce((sum, image) => sum + image.score, 0) / images.length);
+    const usingUploads = images.some((image) => image.source === 'uploaded');
+
+    return {
+      score,
+      confidence: usingUploads ? Math.min(95, 62 + images.length * 8) : 55,
+      label: score >= 75 ? 'Alta' : score >= 50 ? 'Media' : 'Baja',
+      factors: metrics,
+      notes: usingUploads
+        ? [
+            'Score calculado sobre las imágenes subidas en esta sesión.',
+            'Para entrega final con CNN, usa fotos reales guardadas en img/<ID Airbnb>/ y reserva test real.',
+          ]
+        : [
+            'Score calculado sobre fotos reales descargadas desde la URL canónica del anuncio.',
+            'Estas imágenes están guardadas localmente bajo public/img/<ID Airbnb>/.',
+          ],
+    };
+  });
+
+  readonly fusion = computed(() => {
+    const meta = this.meta();
+    const vision = this.visionScore();
+    const tabular = this.tabularScore();
+    const reviews = this.reviewScore();
+    if (!meta || !vision || !tabular || !reviews) {
+      return null;
+    }
+
+    return fuseScores(
+      vision.score,
+      tabular.score,
+      reviews.score,
+      vision.confidence,
+      tabular.confidence,
+      reviews.confidence,
+      meta.fusionWeights,
+    );
+  });
+
+  readonly filteredListings = computed<ListingPreview[]>(() => {
+    const term = normalize(this.searchTerm());
+    const filter = this.filter();
+    return this.listings()
+      .filter((listing) => {
+        const matchesTerm =
+          !term ||
+          normalize(`${listing.title} ${listing.host} ${listing.id}`).includes(term) ||
+          listing.searchText.includes(term);
+        const matchesFilter =
+          filter === 'all' ||
+          (filter === 'withReviews' && listing.reviewCountMatched > 0) ||
+          (filter === 'withoutReviews' && listing.reviewCountMatched === 0);
+        return matchesTerm && matchesFilter;
+      })
+      .map((listing) => ({
+        listing,
+        tabularScore: scoreTabular(listing, this.cohort()).score,
+      }))
+      .sort((a, b) => b.tabularScore - a.tabularScore);
+  });
+
+  async ngOnInit(): Promise<void> {
+    try {
+      const response = await fetch('data/listings.json');
+      if (!response.ok) {
+        throw new Error(`No se pudo cargar listings.json (${response.status})`);
+      }
+      const dataset = (await response.json()) as ListingDataset;
+      const imageManifestResponse = await fetch('data/image-manifest.json');
+      if (!imageManifestResponse.ok) {
+        throw new Error(`No se pudo cargar image-manifest.json (${imageManifestResponse.status})`);
+      }
+      const imageManifest = (await imageManifestResponse.json()) as ImageManifest;
+      this.dataset.set(dataset);
+      this.imageManifest.set(imageManifest);
+      const cohort = buildCohortStats(dataset.listings);
+      const initialListing =
+        [...dataset.listings].sort(
+          (a, b) => scoreTabular(b, cohort).score - scoreTabular(a, cohort).score,
+        )[0] ?? null;
+      this.selectedId.set(initialListing?.id ?? '');
+      if (initialListing) {
+        await this.loadListingImages(initialListing);
+      }
+      this.resetChatForListing(false);
+    } catch (error) {
+      this.loadError.set(error instanceof Error ? error.message : 'Error desconocido al cargar datos');
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.uploadedObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+  }
+
+  selectListing(listingId: string): void {
+    this.selectedId.set(listingId);
+    const listing = this.selectedListing();
+    if (listing) {
+      void this.loadListingImages(listing);
+    }
+    this.question.set('¿Qué opinan los huéspedes sobre la limpieza y la ubicación?');
+    this.resetChatForListing(true);
+  }
+
+  setFilter(filter: ListingFilter): void {
+    this.filter.set(filter);
+  }
+
+  async runQuestion(scrollToAnswer = true): Promise<void> {
+    const listing = this.selectedListing();
+    if (!listing) {
+      this.chatResult.set(null);
+      this.chatMessages.set([]);
+      return;
+    }
+
+    const question = this.question().trim();
+    if (!question) {
+      return;
+    }
+    const sequence = ++this.chatSequence;
+    const assistantMessageId = this.createChatMessageId('assistant');
+
+    this.chatMessages.update((messages) => [
+      ...messages,
+      {
+        id: this.createChatMessageId('user'),
+        role: 'user',
+        text: question,
+      },
+      {
+        id: assistantMessageId,
+        role: 'assistant',
+        text: 'Consultando Ollama con las reseñas recuperadas del listado...',
+        loading: true,
+      },
+    ]);
+    this.question.set('');
+    this.chatResult.set(null);
+    this.chatError.set('');
+    this.chatLoading.set(true);
+    this.scrollChatToBottom();
+
+    if (scrollToAnswer) {
+      this.activeSection.set('chatbot');
+      window.setTimeout(() => {
+        document
+          .getElementById('chat-thread')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    }
+
+    try {
+      const response = await fetch(RAG_CHAT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          listingId: listing.id,
+          question,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`RAG HTTP ${response.status}`);
+      }
+
+      const ragResult = (await response.json()) as ChatResult;
+      if (sequence === this.chatSequence) {
+        this.chatResult.set(ragResult);
+        this.replaceChatMessage(assistantMessageId, {
+          text: ragResult.answer,
+          result: ragResult,
+          loading: false,
+        });
+        this.chatError.set('');
+      }
+    } catch (error) {
+      if (sequence === this.chatSequence) {
+        const fallback: ChatResult = {
+          ...answerQuestion(listing, question),
+          mode: 'extractive-fallback',
+          model: 'fallback local',
+          note: this.friendlyRagError(error),
+        };
+        const message = this.friendlyRagError(error);
+        this.chatResult.set(fallback);
+        this.replaceChatMessage(assistantMessageId, {
+          text: fallback.answer,
+          result: fallback,
+          loading: false,
+          error: message,
+        });
+        this.chatError.set(message);
+      }
+    } finally {
+      if (sequence === this.chatSequence) {
+        this.chatLoading.set(false);
+        this.scrollChatToBottom();
+      }
+    }
+  }
+
+  askQuickQuestion(question: string): void {
+    this.question.set(question);
+    void this.runQuestion(true);
+  }
+
+  scrollToSection(sectionId: 'datos' | 'modelos' | 'chatbot' | 'evidencia'): void {
+    this.activeSection.set(sectionId);
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  async onImageFiles(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []).filter((file) => file.type.startsWith('image/'));
+    if (files.length === 0) {
+      return;
+    }
+
+    this.uploadedObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+    this.uploadedObjectUrls.length = 0;
+
+    const analyses = await Promise.all(
+      files.slice(0, 8).map(async (file) => {
+        const url = URL.createObjectURL(file);
+        this.uploadedObjectUrls.push(url);
+        return this.analyzeImageUrl(url, file.name, 'uploaded');
+      }),
+    );
+    this.uploadedImages.set(analyses);
+    input.value = '';
+  }
+
+  clearUploadedImages(): void {
+    this.uploadedObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+    this.uploadedObjectUrls.length = 0;
+    this.uploadedImages.set([]);
+  }
+
+  primaryImageFor(listing: Listing): string {
+    const image = this.imageManifest()?.listings[listing.id]?.images[0];
+    return image ? image : 'images/no-real-photo.svg';
+  }
+
+  selectedImageCount(): number {
+    const listing = this.selectedListing();
+    if (!listing) {
+      return 0;
+    }
+    return this.imageManifest()?.listings[listing.id]?.imageCount ?? 0;
+  }
+
+  downloadDecision(): void {
+    const listing = this.selectedListing();
+    const fusion = this.fusion();
+    const vision = this.visionScore();
+    const tabular = this.tabularScore();
+    const reviews = this.reviewScore();
+    if (!listing || !fusion || !vision || !tabular || !reviews) {
+      return;
+    }
+
+    const payload = {
+      generatedAt: new Date().toISOString(),
+      listing: {
+        id: listing.id,
+        title: listing.title,
+        host: listing.host,
+        canonicalUrl: listing.canonicalUrl,
+      },
+      decision: fusion,
+      modalityScores: { vision, tabular, reviews },
+      note: 'Export académico de demo. El score visual usa fotos reales locales cuando existen para el ID seleccionado.',
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `decision-${listing.id}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  scoreClass(score: number): string {
+    if (score >= 75) {
+      return 'good';
+    }
+    if (score >= 50) {
+      return 'watch';
+    }
+    return 'bad';
+  }
+
+  displayScore(score: number | undefined): string {
+    return typeof score === 'number' ? score.toFixed(1) : '--';
+  }
+
+  shortText(text: string, max = 150): string {
+    return snippet(text, max);
+  }
+
+  private resetChatForListing(contextChanged = false): void {
+    const listing = this.selectedListing();
+    this.chatSequence += 1;
+    this.chatResult.set(null);
+    this.chatLoading.set(false);
+    this.chatError.set('');
+    this.chatMessages.set([
+      {
+        id: this.createChatMessageId('assistant'),
+        role: 'assistant',
+        text: listing
+          ? contextChanged
+            ? `Contexto actualizado. Ahora estás preguntando sobre: "${listing.title}". Usaré solo la ficha de este anuncio y sus reseñas recuperadas.`
+            : `Hola. Estoy listo para responder sobre "${listing.title}" usando la ficha del anuncio y sus reseñas recuperadas.`
+          : 'Hola. Selecciona un listado para iniciar el análisis.',
+      },
+    ]);
+  }
+
+  private friendlyRagError(error: unknown): string {
+    const raw = error instanceof Error ? error.message : String(error ?? '');
+    const normalized = raw.toLowerCase();
+    if (normalized.includes('model') && normalized.includes('not found')) {
+      return `Modelo no encontrado. Ejecuta: ollama pull ${OLLAMA_MODEL_NAME}`;
+    }
+    if (
+      normalized.includes('failed to fetch') ||
+      normalized.includes('fetch failed') ||
+      normalized.includes('econnrefused') ||
+      normalized.includes('connect') ||
+      normalized.includes('rag http')
+    ) {
+      return `No se pudo conectar con Ollama. Verifica que Ollama esté ejecutándose y que el modelo ${OLLAMA_MODEL_NAME} esté instalado.`;
+    }
+    return `No se pudo consultar Ollama/RAG: ${raw}`;
+  }
+
+  private createChatMessageId(role: ChatMessage['role']): string {
+    return `${role}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  private replaceChatMessage(messageId: string, update: Partial<ChatMessage>): void {
+    this.chatMessages.update((messages) =>
+      messages.map((message) => (message.id === messageId ? { ...message, ...update } : message)),
+    );
+  }
+
+  private scrollChatToBottom(): void {
+    window.setTimeout(() => {
+      const thread = document.getElementById('chat-thread');
+      if (thread) {
+        thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
+      }
+    });
+  }
+
+  private analyzeImageUrl(
+    url: string,
+    name: string,
+    source: ImageAnalysis['source'],
+  ): Promise<ImageAnalysis> {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => {
+        const maxWidth = 260;
+        const ratio = image.naturalHeight / Math.max(image.naturalWidth, 1);
+        const width = maxWidth;
+        const height = Math.max(1, Math.round(maxWidth * ratio));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) {
+          reject(new Error('No se pudo crear contexto canvas para analizar imagen'));
+          return;
+        }
+        context.drawImage(image, 0, 0, width, height);
+        const imageData = context.getImageData(0, 0, width, height);
+        const metrics = analyzeImagePixels(imageData.data, width, height);
+
+        resolve({
+          id: `${source}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          name,
+          previewUrl: url,
+          source,
+          metrics,
+          score: scoreImageMetrics(metrics),
+        });
+      };
+      image.onerror = () => reject(new Error(`No se pudo cargar la imagen ${name}`));
+      image.src = url;
+    });
+  }
+
+  private async loadListingImages(listing: Listing): Promise<void> {
+    const sequence = ++this.imageLoadSequence;
+    const manifestEntry = this.imageManifest()?.listings[listing.id];
+    const imagePaths = manifestEntry?.images ?? [];
+    this.imageLoadError.set('');
+
+    if (imagePaths.length === 0) {
+      this.listingImages.set([]);
+      this.imageLoadError.set('No hay fotos reales descargadas para este listado.');
+      return;
+    }
+
+    try {
+      const analyses = await Promise.all(
+        imagePaths.map((path) =>
+          this.analyzeImageUrl(path, path.split('/').pop() ?? 'foto real', 'airbnb-canonical'),
+        ),
+      );
+      if (sequence === this.imageLoadSequence) {
+        this.listingImages.set(analyses);
+      }
+    } catch (error) {
+      if (sequence === this.imageLoadSequence) {
+        this.listingImages.set([]);
+        this.imageLoadError.set(
+          error instanceof Error ? error.message : 'No se pudieron analizar las fotos reales',
+        );
+      }
+    }
+  }
+}
+
+function averageImageMetrics(images: ImageAnalysis[]): ScoreFactor[] {
+  if (images.length === 0) {
+    return [];
+  }
+  return images[0].metrics.map((metric, index) => {
+    const average = images.reduce((sum, image) => sum + image.metrics[index].value, 0) / images.length;
+    return {
+      label: metric.label,
+      value: roundOne(average),
+      detail: images.length === 1 ? metric.detail : `promedio de ${images.length} imagenes`,
+    };
+  });
+}

@@ -1,0 +1,597 @@
+@if (loading()) {
+  <main class="loading-screen">
+    <div class="loader"></div>
+    <p>Cargando dataset Barranco...</p>
+  </main>
+} @else if (loadError()) {
+  <main class="loading-screen">
+    <h1>No se pudo cargar la demo</h1>
+    <p>{{ loadError() }}</p>
+  </main>
+} @else {
+  <main class="app-shell">
+    <aside class="sidebar" aria-label="Listado de departamentos">
+      <header class="brand">
+        <div class="brand-mark">AM</div>
+        <div>
+          <strong>Airbnb Barranco</strong>
+          <span>Demo multimodal DL</span>
+        </div>
+      </header>
+
+      <label class="search">
+        <span class="sr-only">Buscar listado</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m21 21-4.2-4.2m1.2-5.3a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z" />
+        </svg>
+        <input
+          type="search"
+          placeholder="Buscar por título, host o ID"
+          [ngModel]="searchTerm()"
+          (ngModelChange)="searchTerm.set($event)"
+        />
+      </label>
+
+      <section class="filter-bar" aria-label="Filtros">
+        <button
+          type="button"
+          class="filter-button"
+          [class.active]="filter() === 'all'"
+          (click)="setFilter('all')"
+        >
+          Todos
+          <span>{{ meta()?.listingCount }}</span>
+        </button>
+        <button
+          type="button"
+          class="filter-button"
+          [class.active]="filter() === 'withReviews'"
+          (click)="setFilter('withReviews')"
+        >
+          Con reseñas
+          <span>{{ meta()?.matchedListingCount }}</span>
+        </button>
+        <button
+          type="button"
+          class="filter-button"
+          [class.active]="filter() === 'withoutReviews'"
+          (click)="setFilter('withoutReviews')"
+        >
+          Sin reseñas
+          <span>{{ meta()?.unmatchedListingCount }}</span>
+        </button>
+      </section>
+
+      <p class="result-count">{{ filteredListings().length }} listados encontrados</p>
+
+      <section class="listing-list">
+        @for (item of filteredListings(); track item.listing.id + '-' + $index) {
+          <button
+            type="button"
+            class="listing-row"
+            [class.active]="item.listing.id === selectedId()"
+            (click)="selectListing(item.listing.id)"
+          >
+            <img [src]="primaryImageFor(item.listing)" alt="" />
+            <span class="row-main">
+              <strong>{{ item.listing.title }}</strong>
+              <small>Host: {{ item.listing.host }}</small>
+              <small>{{ item.listing.reviewCountMatched }} reseñas cruzadas</small>
+            </span>
+            <span class="row-score">
+              <strong>S/ {{ item.listing.price | number: '1.0-0' }}</strong>
+              <small>{{ displayScore(item.tabularScore) }}</small>
+            </span>
+          </button>
+        }
+      </section>
+
+      <button type="button" class="export-button" (click)="downloadDecision()">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3" />
+        </svg>
+        Exportar decisión JSON
+      </button>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <nav aria-label="Secciones de la demo">
+          <button
+            type="button"
+            [class.active]="activeSection() === 'datos'"
+            (click)="scrollToSection('datos')"
+          >
+            Datos
+          </button>
+          <button
+            type="button"
+            [class.active]="activeSection() === 'modelos'"
+            (click)="scrollToSection('modelos')"
+          >
+            Modelos
+          </button>
+          <button
+            type="button"
+            [class.active]="activeSection() === 'chatbot'"
+            (click)="scrollToSection('chatbot')"
+          >
+            Chatbot
+          </button>
+          <button
+            type="button"
+            [class.active]="activeSection() === 'evidencia'"
+            (click)="scrollToSection('evidencia')"
+          >
+            Evidencia
+          </button>
+        </nav>
+        <span class="context-chip">Barranco, Lima</span>
+      </header>
+
+      @if (selectedListing(); as listing) {
+        <section id="datos" class="hero-panel">
+          <div class="listing-photo">
+            <img [src]="primaryImageFor(listing)" alt="Foto real del anuncio seleccionado" />
+            <span>{{ selectedImageCount() }} fotos reales</span>
+          </div>
+          <div class="listing-summary">
+            <h1>{{ listing.title }}</h1>
+            <div class="summary-grid">
+              <span>Host: <strong>{{ listing.host }}</strong></span>
+              <span>Rating: <strong>{{ listing.rating | number: '1.2-2' }}</strong></span>
+              <span>Precio: <strong>S/ {{ listing.price | number: '1.0-0' }}</strong></span>
+              <span>Amenidades: <strong>{{ listing.amenities | number: '1.0-0' }}</strong></span>
+              <span>ID: <strong>{{ listing.id }}</strong></span>
+              <span>Colecta: <strong>{{ listing.collectionDate }}</strong></span>
+            </div>
+            <p>{{ shortText(listing.description || listing.summary, 260) }}</p>
+            <a class="canonical-link" [href]="listing.canonicalUrl" target="_blank" rel="noopener">
+              URL canónica del anuncio
+            </a>
+          </div>
+          @if (fusion(); as fusionResult) {
+            <div class="decision-card" [class]="scoreClass(fusionResult.score)">
+              <span>Puntaje de decisión</span>
+              <strong>{{ displayScore(fusionResult.score) }}</strong>
+              <small>{{ fusionResult.label }} · confianza {{ displayScore(fusionResult.confidence) }}</small>
+            </div>
+          }
+        </section>
+
+        <section id="modelos" class="score-grid">
+          @if (visionScore(); as vision) {
+            <article class="score-card">
+              <div class="card-title">
+                <span class="icon-eye"></span>
+                <h2>Vision CNN</h2>
+              </div>
+              <p>Baseline visual reemplazable por CNN entrenada</p>
+              <div class="score-line">
+                <strong>{{ displayScore(vision.score) }}</strong>
+                <span [class]="scoreClass(vision.score)">{{ vision.label }}</span>
+              </div>
+              <div class="factor-list">
+                @for (factor of vision.factors; track factor.label) {
+                  <div class="factor-row">
+                    <span>{{ factor.label }}</span>
+                    <div class="meter"><i [style.width.%]="factor.value"></i></div>
+                    <strong>{{ displayScore(factor.value) }}</strong>
+                  </div>
+                }
+              </div>
+              <footer>Confianza {{ displayScore(vision.confidence) }}%</footer>
+            </article>
+          }
+
+          @if (tabularScore(); as tabular) {
+            <article class="score-card">
+              <div class="card-title">
+                <span class="icon-table"></span>
+                <h2>MLP Tabular</h2>
+              </div>
+              <p>Baseline tabular reemplazable por MLP entrenado</p>
+              <div class="score-line">
+                <strong>{{ displayScore(tabular.score) }}</strong>
+                <span [class]="scoreClass(tabular.score)">{{ tabular.label }}</span>
+              </div>
+              <div class="factor-list">
+                @for (factor of tabular.factors; track factor.label) {
+                  <div class="factor-row">
+                    <span>{{ factor.label }}</span>
+                    <div class="meter"><i [style.width.%]="factor.value"></i></div>
+                    <strong>{{ displayScore(factor.value) }}</strong>
+                  </div>
+                }
+              </div>
+              <footer>Confianza {{ displayScore(tabular.confidence) }}%</footer>
+            </article>
+          }
+
+          @if (reviewScore(); as reviews) {
+            <article class="score-card">
+              <div class="card-title">
+                <span class="icon-chat"></span>
+                <h2>LLM Reseñas</h2>
+              </div>
+              <p>Sentimiento, temas y evidencia textual</p>
+              <div class="score-line">
+                <strong>{{ displayScore(reviews.score) }}</strong>
+                <span [class]="scoreClass(reviews.score)">{{ reviews.label }}</span>
+              </div>
+              <div class="factor-list">
+                @for (factor of reviews.factors; track factor.label) {
+                  <div class="factor-row">
+                    <span>{{ factor.label }}</span>
+                    <div class="meter"><i [style.width.%]="factor.value"></i></div>
+                    <strong>{{ displayScore(factor.value) }}</strong>
+                  </div>
+                }
+              </div>
+              <footer>Confianza {{ displayScore(reviews.confidence) }}%</footer>
+            </article>
+          }
+        </section>
+
+        <section class="lower-grid">
+          <article class="photo-panel">
+            <div class="section-heading">
+              <h2>Calidad fotográfica</h2>
+              <p>
+                Fotos reales desde la URL canónica. Puedes subir otras para comparar el score.
+              </p>
+            </div>
+            <label class="dropzone">
+              <input type="file" accept="image/*" multiple (change)="onImageFiles($event)" />
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 16V4m0 0 4 4m-4-4-4 4M4 17v3h16v-3" />
+              </svg>
+              <strong>Arrastra o selecciona imágenes</strong>
+              <span>Override temporal: se analizan hasta 8 fotos por sesión</span>
+            </label>
+            @if (imageLoadError()) {
+              <p class="image-warning">{{ imageLoadError() }}</p>
+            }
+            <div class="image-strip">
+              @for (image of visionImages(); track image.id) {
+                <figure>
+                  <img [src]="image.previewUrl" [alt]="image.name" />
+                  <figcaption>
+                    {{ image.name }}
+                    <strong>{{ displayScore(image.score) }}</strong>
+                  </figcaption>
+                </figure>
+              }
+            </div>
+            @if (uploadedImages().length > 0) {
+              <button type="button" class="text-button" (click)="clearUploadedImages()">
+                Volver a fotos reales del anuncio
+              </button>
+            }
+          </article>
+
+          <article id="chatbot" class="chat-panel">
+            <div class="section-heading">
+              <h2>Chatbot de reseñas</h2>
+              <p>RAG local con reseñas de Reviews y respuesta generativa por Ollama.</p>
+            </div>
+            <div class="chat-status-row" aria-live="polite">
+              @if (chatLoading()) {
+                <span class="chat-status loading">Consultando Ollama</span>
+              } @else if (chatResult()?.mode === 'ollama-rag') {
+                <span class="chat-status success">RAG + Ollama</span>
+              } @else if (chatResult()) {
+                <span class="chat-status fallback">Fallback extractivo</span>
+              } @else {
+                <span class="chat-status ready">Listo para preguntar</span>
+              }
+              <span>Modelo: {{ ragModelName }}</span>
+            </div>
+            <div class="chat-context-card" aria-label="Contexto actual del chatbot">
+              <div>
+                <span>Respondiendo sobre</span>
+                <strong>{{ listing.title }}</strong>
+              </div>
+              <div>
+                <span>ID Airbnb</span>
+                <strong>{{ listing.id }}</strong>
+              </div>
+              <div>
+                <span>Fuente</span>
+                <strong>Ficha del anuncio + reseñas recuperadas</strong>
+              </div>
+              <div>
+                <span>Modo principal</span>
+                <strong>{{ chatResult()?.mode ?? 'ollama-rag' }}</strong>
+              </div>
+              <div>
+                <span>Modelo local</span>
+                <strong>{{ chatResult()?.model ?? ragModelName }}</strong>
+              </div>
+            </div>
+            <div class="chat-window" aria-label="Conversación con el chatbot">
+              <div id="chat-thread" class="chat-thread" aria-live="polite">
+                @for (message of chatMessages(); track message.id) {
+                  <div
+                    class="message-row"
+                    [class.user-message]="message.role === 'user'"
+                    [class.assistant-message]="message.role === 'assistant'"
+                  >
+                    @if (message.role === 'assistant') {
+                      <span class="message-avatar">IA</span>
+                    }
+                    <div class="message-stack">
+                      <div
+                        class="message-bubble"
+                        [class.user-bubble]="message.role === 'user'"
+                        [class.assistant-bubble]="message.role === 'assistant'"
+                      >
+                        @if (message.loading) {
+                          <span class="typing-indicator" aria-hidden="true">
+                            <i></i>
+                            <i></i>
+                            <i></i>
+                          </span>
+                          <span>{{ message.text }}</span>
+                        } @else {
+                          <p>{{ message.text }}</p>
+                          @if (message.result?.model || message.result?.note) {
+                            <small class="chat-meta">
+                              @if (message.result?.model) {
+                                Modelo: {{ message.result?.model }}.
+                              }
+                              @if (message.result?.note) {
+                                {{ message.result?.note }}
+                              }
+                            </small>
+                          }
+                        }
+                      </div>
+                      @if (message.error) {
+                        <p class="chat-warning">{{ message.error }}</p>
+                      }
+                      @if (message.result; as chat) {
+                        <details class="message-sources">
+                          <summary>
+                            Evidencia usada · {{ chat.facts?.length ?? 0 }} datos ·
+                            {{ chat.evidence.length }} reseñas
+                          </summary>
+                          <div class="trace-strip">
+                            <span>Modo: {{ chat.mode }}</span>
+                            <span>Modelo: {{ chat.model }}</span>
+                            @if (chat.retrievalTopic) {
+                              <span>Criterio: {{ chat.retrievalTopic }}</span>
+                            }
+                            @if (chat.note) {
+                              <span>{{ chat.note }}</span>
+                            }
+                          </div>
+                          @if (chat.facts?.length) {
+                            <div class="fact-list" aria-label="Datos usados del anuncio">
+                              @for (fact of chat.facts; track fact.label) {
+                                <div class="fact-item">
+                                  <span>{{ fact.label }}</span>
+                                  <strong>{{ fact.value }}</strong>
+                                  <small>{{ fact.source }}</small>
+                                </div>
+                              }
+                            </div>
+                          }
+                          <div class="evidence-list">
+                            @if (chat.evidence.length === 0) {
+                              <p class="empty-state">
+                                Sin fragmentos de reseñas recuperados para esta pregunta.
+                              </p>
+                            }
+                            @for (item of chat.evidence; track item.review.index) {
+                              <blockquote>
+                                "{{ shortText(item.review.text, 190) }}"
+                                <footer>
+                                  Review {{ item.review.index }} · relevancia {{ item.relevance }}%
+                                </footer>
+                              </blockquote>
+                            }
+                          </div>
+                        </details>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+
+              <div class="chat-composer" aria-label="Enviar mensaje al chatbot">
+                <label for="chat-question-input">Mensaje</label>
+                <div class="question-box">
+                  <textarea
+                    id="chat-question-input"
+                    rows="3"
+                    placeholder="Escribe una pregunta sobre limpieza, ubicación, anfitrión o capacidad"
+                    [ngModel]="question()"
+                    (ngModelChange)="question.set($event)"
+                    aria-label="Pregunta al chatbot"
+                    (keydown.enter)="runQuestion(true); $event.preventDefault()"
+                  ></textarea>
+                  <button type="button" (click)="runQuestion(true)" [disabled]="chatLoading()">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="m22 2-7 20-4-9-9-4 20-7Z" />
+                    </svg>
+                    Enviar
+                  </button>
+                </div>
+                <div class="quick-prompts" aria-label="Preguntas rápidas">
+                  <button
+                    type="button"
+                    (click)="askQuickQuestion('¿Qué dicen sobre la limpieza del departamento?')"
+                  >
+                    Limpieza
+                  </button>
+                  <button
+                    type="button"
+                    (click)="askQuickQuestion('¿Qué opinan sobre la ubicación y los restaurantes cercanos?')"
+                  >
+                    Ubicación
+                  </button>
+                  <button
+                    type="button"
+                    (click)="askQuickQuestion('¿Cómo describen al anfitrión y su atención?')"
+                  >
+                    Anfitrión
+                  </button>
+                  <button
+                    type="button"
+                    (click)="askQuickQuestion('¿Para cuántas personas es recomendable este departamento?')"
+                  >
+                    Capacidad
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="legacy-chat-block" aria-hidden="true">
+            <div class="chat-composer" aria-label="Enviar mensaje al chatbot">
+              <label for="chat-question">Escribe tu mensaje</label>
+              <div class="question-box">
+                <textarea
+                  id="chat-question"
+                  rows="4"
+                  placeholder="Ejemplo: ¿Qué dicen los huéspedes sobre la limpieza, ubicación o anfitrión?"
+                  [ngModel]="question()"
+                  (ngModelChange)="question.set($event)"
+                  aria-label="Pregunta al chatbot"
+                ></textarea>
+                <button type="button" (click)="runQuestion(true)">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m22 2-7 20-4-9-9-4 20-7Z" />
+                  </svg>
+                  Enviar
+                </button>
+              </div>
+              <div class="quick-prompts" aria-label="Preguntas rápidas">
+                <button
+                  type="button"
+                  (click)="askQuickQuestion('¿Qué dicen sobre la limpieza del departamento?')"
+                >
+                  Limpieza
+                </button>
+                <button
+                  type="button"
+                  (click)="askQuickQuestion('¿Qué opinan sobre la ubicación y los restaurantes cercanos?')"
+                >
+                  Ubicación
+                </button>
+                <button
+                  type="button"
+                  (click)="askQuickQuestion('¿Cómo describen al anfitrión y su atención?')"
+                >
+                  Anfitrión
+                </button>
+                <button
+                  type="button"
+                  (click)="askQuickQuestion('¿Para cuántas personas es recomendable este departamento?')"
+                >
+                  Capacidad
+                </button>
+              </div>
+            </div>
+            @if (chatResult(); as chat) {
+              <div id="chat-response" class="assistant-answer" aria-live="polite">
+                <strong>
+                  Respuesta generada ·
+                  {{ chat.evidence.length + (chat.facts?.length ?? 0) }} evidencias
+                </strong>
+                <p>{{ chat.answer }}</p>
+                @if (chat.model || chat.note) {
+                  <small class="chat-meta">
+                    @if (chat.model) {
+                      Modelo: {{ chat.model }}.
+                    }
+                    @if (chat.note) {
+                      {{ chat.note }}
+                    }
+                  </small>
+                }
+              </div>
+              @if (chatError()) {
+                <p class="chat-warning">{{ chatError() }}</p>
+              }
+              @if (chat.facts?.length) {
+                <div class="fact-list" aria-label="Datos usados del anuncio">
+                  @for (fact of chat.facts; track fact.label) {
+                    <div class="fact-item">
+                      <span>{{ fact.label }}</span>
+                      <strong>{{ fact.value }}</strong>
+                      <small>{{ fact.source }}</small>
+                    </div>
+                  }
+                </div>
+              }
+              <div class="evidence-list">
+                @if (chat.evidence.length === 0) {
+                  <p class="empty-state">Sin fragmentos de reseñas recuperados para esta pregunta.</p>
+                }
+                @for (item of chat.evidence; track item.review.index) {
+                  <blockquote>
+                    "{{ shortText(item.review.text, 190) }}"
+                    <footer>Review {{ item.review.index }} · relevancia {{ item.relevance }}%</footer>
+                  </blockquote>
+                }
+              </div>
+            }
+            </div>
+          </article>
+        </section>
+
+        <section id="evidencia" class="evidence-grid">
+          <article class="rules-card">
+            <h2>Reglas de scoring</h2>
+            <dl>
+              <div>
+                <dt>Visión</dt>
+                <dd>
+                  Promedio ponderado de iluminación, contraste, nitidez, color natural y cobertura útil.
+                  Las fotos se guardan localmente en public/img/&lt;ID Airbnb&gt;/ desde la URL canónica.
+                </dd>
+              </div>
+              <div>
+                <dt>Tabular</dt>
+                <dd>
+                  Baseline de MLP: rating, precio, amenidades, señales de confianza del host, años como host y política
+                  se normalizan contra el grupo Barranco.
+                </dd>
+              </div>
+              <div>
+                <dt>Reseñas</dt>
+                <dd>
+                  Sentimiento léxico en español + cobertura de temas frecuentes: limpieza, ubicación, anfitrión,
+                  comodidad, precio y fotos.
+                </dd>
+              </div>
+              <div>
+                <dt>Fusión tardía</dt>
+                <dd>
+                  Puntaje final = 0.40 × Visión + 0.30 × Tabular + 0.30 × Reseñas.
+                  &gt;=75 Recomendado, 50-74 Revisar, &lt;50 No recomendado.
+                </dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="coverage-card">
+              <h2>Integración multimodal</h2>
+              <ul>
+              <li>LLM/chatbot: funcional con RAG por alojamiento seleccionado + Ollama local.</li>
+              <li>MLP tabular: pendiente de integrar modelo entrenado; la demo muestra un baseline auditable.</li>
+              <li>CNN visual: pendiente de integrar modelo entrenado; la demo muestra análisis visual heurístico.</li>
+              <li>Fusión multimodal: baseline demostrativo con pesos configurados en el dataset.</li>
+              </ul>
+            @if (meta(); as dataMeta) {
+              <p class="source-note">
+                Fuente: {{ dataMeta.generatedFromSheets.join(' + ') }} · {{ dataMeta.listingCount }} listados ·
+                {{ dataMeta.reviewCount }} reseñas cruzadas.
+              </p>
+            }
+          </article>
+        </section>
+      }
+    </section>
+  </main>
+}
