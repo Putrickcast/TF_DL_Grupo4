@@ -25,7 +25,7 @@ import {
 
 type ListingFilter = 'all' | 'withReviews' | 'withoutReviews';
 
-const RAG_CHAT_ENDPOINT = 'http://127.0.0.1:8787/api/rag-chat';
+const RAG_CHAT_ENDPOINT = '/api/rag-chat';
 const OLLAMA_MODEL_NAME = 'llama3.1:8b';
 
 interface ListingPreview {
