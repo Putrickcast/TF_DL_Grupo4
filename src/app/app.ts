@@ -422,6 +422,15 @@ export class App implements OnInit, OnDestroy {
     return snippet(text, max);
   }
 
+  evidenceSummary(chat: ChatResult): string {
+    return `${chat.evidence.length} reseñas recuperadas`;
+  }
+
+  evidenceNote(chat: ChatResult): string {
+    const retrievedCount = chat.retrievedEvidenceCount ?? chat.retrievedEvidence?.length ?? chat.evidence.length;
+    return chat.note ?? `RAG local: ${retrievedCount} reseñas recuperadas desde Reviews.`;
+  }
+
   private resetChatForListing(contextChanged = false): void {
     const listing = this.selectedListing();
     this.chatSequence += 1;

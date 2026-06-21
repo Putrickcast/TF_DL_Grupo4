@@ -17,6 +17,26 @@ const TOPIC_KEYWORDS = {
   capacidad: ['persona', 'personas', 'huesped', 'huespedes', 'huésped', 'huéspedes', 'camas', 'habitacion'],
 };
 
+const QUERY_STOP_WORDS = new Set([
+  'tiene',
+  'tener',
+  'hay',
+  'esta',
+  'este',
+  'para',
+  'sobre',
+  'como',
+  'que',
+  'cual',
+  'cuales',
+  'donde',
+  'cuando',
+  'opinan',
+  'dicen',
+  'huéspedes',
+  'huespedes',
+]);
+
 let datasetCache;
 
 function sendJson(response, status, payload) {
@@ -85,7 +105,7 @@ function unique(values) {
 }
 
 function expandedQuestionTokens(question) {
-  const baseTokens = tokenize(question);
+  const baseTokens = tokenize(question).filter((token) => !QUERY_STOP_WORDS.has(token));
   const expanded = new Set(baseTokens);
   const normalizedQuestion = normalize(question);
 
@@ -139,6 +159,50 @@ function reviewRelevance(review, tokens) {
   return matches / Math.max(tokens.length, 1);
 }
 
+function contextualSnippet(text, question, max = 210) {
+  const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (clean.length <= max) {
+    return clean;
+  }
+
+  const primaryTokens = tokenize(question).filter((token) => token.length > 2 && !QUERY_STOP_WORDS.has(token));
+  const tokens = expandedQuestionTokens(question).filter((token) => token.length > 2);
+  const sentences = clean
+    .split(/(?<=[.!?¡¿])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const candidates = sentences.length > 0 ? sentences : [clean];
+  const best = candidates
+    .map((sentence) => {
+      const normalizedSentence = normalize(sentence);
+      const primaryHits = primaryTokens.filter((token) => normalizedSentence.includes(token)).length;
+      const expandedHits = tokens.filter((token) => normalizedSentence.includes(token)).length;
+      const hits = primaryHits * 10 + expandedHits;
+      return {
+        sentence,
+        hits,
+        firstHit:
+          primaryTokens.find((token) => normalizedSentence.includes(token)) ??
+          tokens.find((token) => normalizedSentence.includes(token)) ??
+          '',
+      };
+    })
+    .sort((a, b) => b.hits - a.hits)[0];
+
+  const source = best?.hits ? best.sentence : clean;
+  if (source.length <= max) {
+    return source;
+  }
+
+  const normalizedSource = normalize(source);
+  const hitToken = best?.firstHit || tokens.find((token) => normalizedSource.includes(token)) || '';
+  const hitIndex = hitToken ? Math.max(normalizedSource.indexOf(hitToken), 0) : 0;
+  const start = Math.max(0, hitIndex - Math.floor(max * 0.35));
+  const end = Math.min(source.length, start + max);
+  const excerpt = source.slice(start, end).trim();
+  return `${start > 0 ? '...' : ''}${excerpt}${end < source.length ? '...' : ''}`;
+}
+
 function retrieveEvidence(listing, question) {
   // RAG retrieval: keep generation grounded by selecting only reviews from the active Airbnb ID.
   const tokens = expandedQuestionTokens(question);
@@ -153,13 +217,13 @@ function retrieveEvidence(listing, question) {
 
   if (ranked.length > 0) {
     return ranked.map((item) => ({
-      review: item.review,
+      review: { ...item.review, excerpt: contextualSnippet(item.review.text, question) },
       relevance: Math.round(item.relevance * 1000) / 10,
     }));
   }
 
   return listing.reviews.slice(0, 3).map((review) => ({
-    review,
+    review: { ...review, excerpt: contextualSnippet(review.text, question) },
     relevance: 0,
   }));
 }
@@ -212,6 +276,30 @@ function stripThinking(text) {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 }
 
+function evidenceSnippet(text, max = 190) {
+  const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
+  return clean.length <= max ? clean : `${clean.slice(0, max - 3).trim()}...`;
+}
+
+function stripGeneratedEvidenceSection(answer) {
+  return String(answer ?? '')
+    .replace(/\n*\s*Evidencia\s*:\s*[\s\S]*$/i, '')
+    .trim();
+}
+
+function appendDeterministicEvidence(answer, evidence) {
+  const recovered = evidence.slice(0, 5);
+  const body = stripGeneratedEvidenceSection(answer);
+  if (recovered.length === 0) {
+    return body;
+  }
+
+  const evidenceLines = recovered.map(
+    (item) => `- Review ${item.review.index} | relevancia ${item.relevance}%: "${item.review.excerpt ?? evidenceSnippet(item.review.text)}"`,
+  );
+  return `${body}\n\nEvidencia recuperada desde Reviews:\n${evidenceLines.join('\n')}`;
+}
+
 function buildExtractiveFallback({ listing, question, facts, evidence, reason }) {
   const normalizedQuestion = normalize(question);
   const capacity = facts.find((fact) => fact.label === 'Capacidad');
@@ -234,7 +322,11 @@ function buildExtractiveFallback({ listing, question, facts, evidence, reason })
   return {
     answer,
     facts: facts.slice(0, 4),
-    evidence: evidence.slice(0, 5),
+    evidence: strongest.length > 0 ? strongest : evidence.slice(0, 5),
+    retrievedEvidence: evidence.slice(0, 5),
+    evidenceScope: strongest.length > 0 ? 'citadas' : 'recuperadas',
+    citedEvidenceCount: strongest.length,
+    retrievedEvidenceCount: evidence.length,
     mode: 'extractive-fallback',
     model: 'fallback local',
     note: friendlyOllamaMessage(reason),
@@ -329,19 +421,24 @@ async function handleRagChat(request, response) {
 
   try {
     const answer = await callOllama(prompt);
+    const recoveredEvidence = evidence.slice(0, 5);
+    const groundedAnswer = appendDeterministicEvidence(answer, recoveredEvidence);
     logEvent(
       'CHATBOT respuesta',
       `modo ollama-rag; modelo ${OLLAMA_MODEL}; facts ${facts.length}; reseñas ${evidence.length}; criterio ${retrievalTopic}`,
     );
     sendJson(response, 200, {
-      answer,
+      answer: groundedAnswer,
       facts: facts.slice(0, 4),
-      evidence: evidence.slice(0, 5),
+      evidence: recoveredEvidence,
+      evidenceScope: 'recuperadas',
+      retrievedEvidenceCount: evidence.length,
       mode: 'ollama-rag',
       model: OLLAMA_MODEL,
       retrievalTopic,
       note: `RAG local: ${evidence.length} reseñas recuperadas desde Reviews y ficha de Principal.`,
     });
+    return;
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'error desconocido';
     logEvent('CHATBOT fallback', `listing ${listingId}; razon: ${friendlyOllamaMessage(reason)}`);

@@ -2,6 +2,7 @@ export interface Review {
   date: string;
   index: number;
   text: string;
+  excerpt?: string;
   sentimentHint: string;
 }
 
@@ -132,6 +133,10 @@ export interface ChatResult {
   answer: string;
   facts?: ChatFact[];
   evidence: ChatEvidence[];
+  retrievedEvidence?: ChatEvidence[];
+  evidenceScope?: 'citadas' | 'recuperadas';
+  citedEvidenceCount?: number;
+  retrievedEvidenceCount?: number;
   mode?: 'ollama-rag' | 'extractive-local' | 'extractive-fallback';
   model?: string;
   note?: string;

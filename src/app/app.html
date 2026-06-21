@@ -340,8 +340,8 @@
                               @if (message.result?.model) {
                                 Modelo: {{ message.result?.model }}.
                               }
-                              @if (message.result?.note) {
-                                {{ message.result?.note }}
+                              @if (message.result; as result) {
+                                {{ evidenceNote(result) }}
                               }
                             </small>
                           }
@@ -363,7 +363,7 @@
                               <span>Criterio: {{ chat.retrievalTopic }}</span>
                             }
                             @if (chat.note) {
-                              <span>{{ chat.note }}</span>
+                              <span>{{ evidenceNote(chat) }}</span>
                             }
                           </div>
                           @if (chat.facts?.length) {
@@ -385,7 +385,7 @@
                             }
                             @for (item of chat.evidence; track item.review.index) {
                               <blockquote>
-                                "{{ shortText(item.review.text, 190) }}"
+                                "{{ item.review.excerpt ?? shortText(item.review.text, 190) }}"
                                 <footer>
                                   Review {{ item.review.index }} · relevancia {{ item.relevance }}%
                                 </footer>
@@ -530,7 +530,7 @@
                 }
                 @for (item of chat.evidence; track item.review.index) {
                   <blockquote>
-                    "{{ shortText(item.review.text, 190) }}"
+                    "{{ item.review.excerpt ?? shortText(item.review.text, 190) }}"
                     <footer>Review {{ item.review.index }} · relevancia {{ item.relevance }}%</footer>
                   </blockquote>
                 }
