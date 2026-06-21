@@ -445,7 +445,7 @@ export class App implements OnInit, OnDestroy {
 
   evidenceNote(chat: ChatResult): string {
     const retrievedCount = chat.retrievedEvidenceCount ?? chat.retrievedEvidence?.length ?? chat.evidence.length;
-    return chat.note ?? `RAG local: ${retrievedCount} reseñas recuperadas desde Reviews.`;
+    return chat.note ?? `RAG local: ${chat.evidence.length} reseñas usadas de ${retrievedCount} candidatas recuperadas desde Reviews.`;
   }
 
   private resetChatForListing(contextChanged = false): void {

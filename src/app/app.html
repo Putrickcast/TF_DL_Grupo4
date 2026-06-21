@@ -380,7 +380,7 @@
                           <div class="evidence-list">
                             @if (chat.evidence.length === 0) {
                               <p class="empty-state">
-                                Sin fragmentos de reseñas recuperados para esta pregunta.
+                                Sin reseñas útiles para la intención de esta pregunta.
                               </p>
                             }
                             @for (item of chat.evidence; track item.review.index) {
@@ -392,6 +392,23 @@
                               </blockquote>
                             }
                           </div>
+                          @if ((chat.retrievedEvidence?.length ?? 0) > chat.evidence.length) {
+                            <details class="message-sources candidate-sources">
+                              <summary>
+                                Reseñas candidatas recuperadas · {{ chat.retrievedEvidence?.length ?? 0 }}
+                              </summary>
+                              <div class="evidence-list">
+                                @for (item of chat.retrievedEvidence; track item.review.index) {
+                                  <blockquote>
+                                    "{{ item.review.excerpt ?? shortText(item.review.text, 160) }}"
+                                    <footer>
+                                      Review {{ item.review.index }} · relevancia del recuperador {{ item.relevance }}%
+                                    </footer>
+                                  </blockquote>
+                                }
+                              </div>
+                            </details>
+                          }
                         </details>
                       }
                     </div>
