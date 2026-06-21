@@ -29,6 +29,11 @@ function sendJson(response, status, payload) {
   response.end(JSON.stringify(payload));
 }
 
+function logRequest(request, status, detail = '') {
+  const timestamp = new Date().toLocaleTimeString('es-PE', { hour12: false });
+  console.log(`[${timestamp}] ${request.method} ${request.url} -> ${status}${detail ? ` | ${detail}` : ''}`);
+}
+
 function sendOptions(response) {
   response.writeHead(204, {
     'Access-Control-Allow-Origin': '*',
@@ -318,6 +323,7 @@ async function handleRagChat(request, response) {
 
   try {
     const answer = await callOllama(prompt);
+    logRequest(request, 200, `ollama-rag ${OLLAMA_MODEL}; listing ${listingId}; evidencia ${evidence.length}`);
     sendJson(response, 200, {
       answer,
       facts: facts.slice(0, 4),
@@ -329,6 +335,7 @@ async function handleRagChat(request, response) {
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'error desconocido';
+    logRequest(request, 200, `fallback; listing ${listingId}; razon: ${friendlyOllamaMessage(reason)}`);
     sendJson(response, 200, {
       ...buildExtractiveFallback({ listing, question, facts, evidence, reason }),
       retrievalTopic,
@@ -344,6 +351,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'GET' && request.url === '/api/health') {
+      logRequest(request, 200, 'health');
       sendJson(response, 200, {
         ok: true,
         model: OLLAMA_MODEL,
@@ -358,8 +366,10 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    logRequest(request, 404);
     sendJson(response, 404, { error: 'Ruta no encontrada' });
   } catch (error) {
+    logRequest(request, 500, error instanceof Error ? error.message : 'Error interno desconocido');
     sendJson(response, 500, {
       error: error instanceof Error ? error.message : 'Error interno desconocido',
     });

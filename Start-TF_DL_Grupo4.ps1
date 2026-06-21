@@ -65,6 +65,53 @@ if (-not (Test-Path -LiteralPath $NgrokExe)) {
 
 Write-Host "Abriendo ventanas de monitoreo..." -ForegroundColor Green
 
+New-ModuleWindow -Title "TF_DL_Grupo4 - Monitor General" -Command @"
+Write-Host 'Monitor general en vivo'
+Write-Host 'Local:  http://127.0.0.1:4200/'
+Write-Host 'Public: https://$NgrokDomain'
+Write-Host ''
+while (`$true) {
+  Clear-Host
+  Write-Host 'TF_DL_Grupo4 - estado en vivo' -ForegroundColor Cyan
+  Write-Host ('Hora: {0}' -f (Get-Date -Format 'HH:mm:ss'))
+  Write-Host ''
+
+  try {
+    `$ollama = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:11434/api/tags' -TimeoutSec 4
+    `$models = ((`$ollama.Content | ConvertFrom-Json).models.name -join ', ')
+    Write-Host ('Ollama     OK   modelos: {0}' -f `$models) -ForegroundColor Green
+  } catch {
+    Write-Host 'Ollama     ERROR no responde en 11434' -ForegroundColor Red
+  }
+
+  try {
+    `$rag = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8787/api/health' -TimeoutSec 4
+    `$payload = `$rag.Content | ConvertFrom-Json
+    Write-Host ('RAG API    OK   modelo: {0} | ollamaReachable: {1}' -f `$payload.model, `$payload.ollamaReachable) -ForegroundColor Green
+  } catch {
+    Write-Host 'RAG API    ERROR no responde en 8787' -ForegroundColor Red
+  }
+
+  try {
+    `$angular = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:4200/' -TimeoutSec 4
+    Write-Host ('Angular    OK   http://127.0.0.1:4200/ status {0}' -f `$angular.StatusCode) -ForegroundColor Green
+  } catch {
+    Write-Host 'Angular    ERROR no responde en 4200' -ForegroundColor Red
+  }
+
+  try {
+    `$public = Invoke-WebRequest -UseBasicParsing -Uri 'https://$NgrokDomain/api/health' -Headers @{ 'ngrok-skip-browser-warning'='true' } -TimeoutSec 8
+    Write-Host ('ngrok      OK   https://$NgrokDomain status {0}' -f `$public.StatusCode) -ForegroundColor Green
+  } catch {
+    Write-Host 'ngrok      ERROR tunel publico no responde' -ForegroundColor Red
+  }
+
+  Write-Host ''
+  Write-Host 'Este monitor se actualiza cada 8 segundos. Ctrl+C para detener solo esta ventana.'
+  Start-Sleep -Seconds 8
+}
+"@
+
 New-ModuleWindow -Title "TF_DL_Grupo4 - Ollama Monitor" -Command @"
 Write-Host 'Monitoreando Ollama en http://127.0.0.1:11434'
 Write-Host 'Modelo esperado: $OllamaModel'
@@ -84,9 +131,10 @@ while (`$true) {
 New-ModuleWindow -Title "TF_DL_Grupo4 - Backend RAG API" -Command @"
 Write-Host 'Iniciando backend RAG en http://127.0.0.1:8787'
 Write-Host 'Health: http://127.0.0.1:8787/api/health'
+Write-Host 'Aqui veras cada request al RAG y cada pregunta del chatbot.'
 Write-Host ''
 `$env:OLLAMA_MODEL = '$OllamaModel'
-& '$Pnpm' run rag
+& '$Pnpm' exec node server/rag-server.mjs
 "@
 
 Start-Sleep -Seconds 3
@@ -95,18 +143,19 @@ New-ModuleWindow -Title "TF_DL_Grupo4 - Angular Frontend" -Command @"
 Write-Host 'Iniciando Angular en http://127.0.0.1:4200'
 Write-Host 'El proxy /api apunta al backend RAG local.'
 Write-Host ''
-& '$Pnpm' start
+& '$Pnpm' exec ng serve --host 127.0.0.1 --port 4200 --proxy-config proxy.conf.json --allowed-hosts=true
 "@
 
 Start-Sleep -Seconds 6
 
 if (Test-Path -LiteralPath $NgrokExe) {
-  New-ModuleWindow -Title "TF_DL_Grupo4 - ngrok publico" -Command @"
-Write-Host 'Abriendo tunel publico con ngrok'
-Write-Host 'URL publica: https://$NgrokDomain'
-Write-Host ''
-& '$NgrokExe' http --url=$NgrokDomain 4200
-"@
+  $ngrokCommand = "Set-Location -LiteralPath '$ProjectRoot'; & '$NgrokExe' http --url=$NgrokDomain --log=stdout --log-level=info http://127.0.0.1:4200 *> ngrok.log"
+  Start-Process -FilePath "powershell.exe" -ArgumentList @(
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    $ngrokCommand
+  ) -WorkingDirectory $ProjectRoot -WindowStyle Hidden
 }
 
 Write-Host ""
@@ -114,4 +163,4 @@ Write-Host "Ventanas abiertas." -ForegroundColor Green
 Write-Host "Abre localmente:  http://127.0.0.1:4200/"
 Write-Host "Comparte:         https://$NgrokDomain"
 Write-Host ""
-Write-Host "Tip: deja abiertas las ventanas de RAG, Angular y ngrok mientras otras personas prueban la demo."
+Write-Host "Tip: deja abiertas las ventanas de Monitor General, RAG, Angular y Ollama mientras otras personas prueban la demo."
