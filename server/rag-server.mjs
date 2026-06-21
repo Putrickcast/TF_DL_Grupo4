@@ -9,12 +9,44 @@ const DATASET_PATH = resolve('public/data/listings.json');
 
 const TOPIC_KEYWORDS = {
   limpieza: ['limpio', 'limpia', 'impecable', 'ordenado', 'aseado', 'higiene'],
-  ubicacion: ['ubicacion', 'ubicación', 'barranco', 'malecon', 'malecón', 'cerca', 'restaurantes'],
-  anfitrion: ['anfitrion', 'anfitrión', 'host', 'amable', 'respuesta', 'atento', 'rocío', 'rocio'],
+  ubicacion: ['ubicacion', 'ubicación', 'zona', 'barranco', 'malecon', 'malecón', 'cerca', 'cercania', 'cercanía', 'restaurantes', 'tranquilo', 'acceso'],
+  anfitrion: ['anfitrion', 'anfitrión', 'host', 'amable', 'respuesta', 'atento', 'atencion', 'atención', 'comunicacion', 'comunicación', 'rocío', 'rocio'],
   comodidad: ['cama', 'comodo', 'cómodo', 'acogedor', 'descansar', 'tranquilo', 'espacio'],
-  precio: ['precio', 'calidad', 'valor', 'recomendado'],
+  precio: ['precio', 'calidad', 'valor', 'razonable', 'caro', 'barato', 'recomendado', 'cumple'],
   fotos: ['foto', 'fotos', 'igual', 'publicadas', 'moderno', 'vista', 'vistas'],
-  capacidad: ['persona', 'personas', 'huesped', 'huespedes', 'huésped', 'huéspedes', 'camas', 'habitacion'],
+  remoto: ['wifi', 'internet', 'trabajo', 'remoto', 'cowork', 'coworking', 'computador', 'ordenador'],
+  quejas: ['queja', 'quejas', 'problema', 'problemas', 'malo', 'mala', 'sucio', 'sucia', 'ruido', 'difícil', 'dificil', 'falta', 'fallo', 'privacidad'],
+  mejoras: ['mejorar', 'mejora', 'mejoras', 'debilidad', 'debilidades', 'aspectos negativos', 'negativo', 'critica', 'crítica', 'criticas', 'críticas'],
+  positivo: ['positivo', 'positivos', 'aspecto positivo', 'aspectos positivos', 'fortaleza', 'fortalezas', 'recomienda', 'recomendado', 'excelente', 'bueno', 'buena', 'bonito', 'agradable'],
+  comercial: ['conviene', 'administrar', 'inversion', 'inversión', 'rentable', 'negocio', 'decision', 'decisión', 'comercial'],
+  capacidad: [
+    'persona',
+    'personas',
+    'pareja',
+    'parejas',
+    'familia',
+    'familias',
+    'grupo',
+    'grupos',
+    'huesped',
+    'huespedes',
+    'huésped',
+    'huéspedes',
+    'cama',
+    'camas',
+    'habitacion',
+    'habitación',
+    'bano',
+    'baño',
+    'comodo',
+    'cómodo',
+    'equipado',
+    'preparado',
+    'estancia',
+    'estadía',
+    'largo plazo',
+    'mediana estadía',
+  ],
 };
 
 const QUERY_STOP_WORDS = new Set([
@@ -100,6 +132,20 @@ function tokenize(text) {
     .filter((token) => token.length > 2);
 }
 
+function normalizedIncludesTerm(normalizedText, term) {
+  const normalizedTerm = normalize(term);
+  if (!normalizedTerm) {
+    return false;
+  }
+
+  if (normalizedTerm.includes(' ')) {
+    return normalizedText.includes(normalizedTerm);
+  }
+
+  const escaped = normalizedTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|\\s)${escaped}(\\s|$)`).test(normalizedText);
+}
+
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -110,7 +156,7 @@ function expandedQuestionTokens(question) {
   const normalizedQuestion = normalize(question);
 
   for (const [topic, keywords] of Object.entries(TOPIC_KEYWORDS)) {
-    if (keywords.some((keyword) => normalizedQuestion.includes(normalize(keyword)))) {
+    if (keywords.some((keyword) => normalizedIncludesTerm(normalizedQuestion, keyword))) {
       expanded.add(topic);
       keywords.forEach((keyword) => expanded.add(normalize(keyword)));
     }
@@ -140,6 +186,10 @@ function extractListingFacts(listing) {
     { label: 'Precio', value: `S/ ${Math.round(listing.price)} por noche`, source: 'Hoja Principal' },
     { label: 'Rating', value: `${listing.rating.toFixed(2)} / 5`, source: 'Hoja Principal' },
     { label: 'Host', value: listing.host, source: 'Hoja Principal' },
+    { label: 'Distrito', value: listing.district, source: 'Hoja Principal' },
+    { label: 'Amenidades', value: `${listing.amenities}`, source: 'Hoja Principal' },
+    { label: 'Superhost', value: listing.superhost ? 'Sí' : 'No', source: 'Hoja Principal' },
+    { label: 'Tiempo como host', value: `${listing.hostYears} años`, source: 'Hoja Principal' },
   );
 
   return facts;
@@ -151,7 +201,7 @@ function reviewRelevance(review, tokens) {
   let matches = 0;
 
   for (const token of tokens) {
-    if (reviewTokens.has(token) || text.includes(token)) {
+    if (reviewTokens.has(token) || normalizedIncludesTerm(text, token)) {
       matches += 1;
     }
   }
@@ -165,6 +215,20 @@ function cleanReviewText(text) {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function informativeReviewText(text) {
+  const clean = cleanReviewText(text);
+  const normalized = normalize(clean);
+  if (clean.length < 35) {
+    return false;
+  }
+  return ![
+    'las resenas de los huespedes mencionan',
+    'las reseñas de los huéspedes mencionan',
+    'resenas de los huespedes',
+    'reseñas de los huéspedes',
+  ].some((phrase) => normalized.includes(normalize(phrase)));
 }
 
 function findOriginalIndex(source, token) {
@@ -271,14 +335,119 @@ function diversifyRepeatedExcerpts(evidence, question) {
   });
 }
 
-function retrieveEvidence(listing, question) {
+function detectIntent(question) {
+  const normalizedQuestion = normalize(question);
+  const hasAny = (tokens) => tokens.some((token) => normalizedIncludesTerm(normalizedQuestion, token));
+  const categories = new Set();
+
+  for (const [topic, keywords] of Object.entries(TOPIC_KEYWORDS)) {
+    if (normalizedIncludesTerm(normalizedQuestion, topic) || hasAny(keywords)) {
+      categories.add(topic);
+    }
+  }
+
+  if (hasAny(['que opinan', 'qué opinan', 'dicen los huespedes', 'dicen los huéspedes', 'experiencia'])) {
+    categories.add('experiencia');
+  }
+
+  const explicitCapacityIntent = hasAny([
+    'capacidad',
+    'cuantas',
+    'cuántas',
+    'cuantos',
+    'cuántos',
+    'persona',
+    'personas',
+    'familia',
+    'familias',
+    'grupo',
+    'grupos',
+    'cama',
+    'camas',
+    'habitacion',
+    'habitación',
+    'banos',
+    'baños',
+  ]);
+  const hasSpecificNonCapacityIntent = ['limpieza', 'ubicacion', 'anfitrion', 'precio', 'quejas', 'mejoras', 'remoto', 'fotos', 'positivo']
+    .some((category) => categories.has(category));
+  if (categories.has('capacidad') && hasSpecificNonCapacityIntent && !explicitCapacityIntent) {
+    categories.delete('capacidad');
+  }
+
+  if (categories.size === 0) {
+    categories.add('general');
+  }
+
+  const asksAboutImprovements = categories.has('mejoras') || hasAny([
+    'deberia mejorar',
+    'debería mejorar',
+    'que puede mejorar',
+    'qué puede mejorar',
+  ]);
+  const asksAboutComplaints = categories.has('quejas');
+  const asksAboutCapacity = categories.has('capacidad');
+  const asksCommercialDecision = categories.has('comercial');
+
+  return {
+    categories: [...categories],
+    asksAboutImprovements,
+    asksAboutComplaints,
+    asksAboutCapacity,
+    asksCommercialDecision,
+  };
+}
+
+function reviewKeywordsForIntent(intent) {
+  const keywords = new Set();
+  for (const category of intent.categories) {
+    const topicKeywords = TOPIC_KEYWORDS[category] ?? [];
+    topicKeywords.forEach((keyword) => keywords.add(normalize(keyword)));
+  }
+
+  if (intent.categories.includes('experiencia') || intent.asksCommercialDecision || intent.categories.includes('general')) {
+    ['excelente', 'bueno', 'buena', 'limpio', 'ubicacion', 'comodo', 'anfitrion', 'recomendado', 'problema', 'valor'].forEach((keyword) => keywords.add(keyword));
+  }
+
+  return [...keywords].filter(Boolean);
+}
+
+function reviewMatchesIntent(review, question, intent) {
+  if (intent.asksCommercialDecision || intent.categories.includes('general') || intent.categories.includes('experiencia')) {
+    return true;
+  }
+
+  const normalizedText = normalize(review.text);
+  const intentKeywords = reviewKeywordsForIntent(intent);
+  if (intentKeywords.some((keyword) => normalizedIncludesTerm(normalizedText, keyword))) {
+    return true;
+  }
+
+  return expandedQuestionTokens(question).some((token) => normalizedIncludesTerm(normalizedText, token));
+}
+
+function dedupeExactReviews(reviews) {
+  const seen = new Set();
+  return reviews.filter((item) => {
+    const key = normalize(cleanReviewText(item.review.text));
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function retrieveEvidence(listing, question, intent) {
   // RAG retrieval: keep generation grounded by selecting only reviews from the active Airbnb ID.
   const tokens = expandedQuestionTokens(question);
-  const ranked = listing.reviews
+  const ranked = dedupeExactReviews(listing.reviews
+    .filter((review) => informativeReviewText(review.text))
     .map((review) => ({
       review,
       relevance: reviewRelevance(review, tokens),
-    }))
+    })))
+    .filter((item) => reviewMatchesIntent(item.review, question, intent))
     .filter((item) => item.relevance > 0)
     .sort((a, b) => b.relevance - a.relevance)
     .slice(0, 5);
@@ -290,10 +459,14 @@ function retrieveEvidence(listing, question) {
     })), question);
   }
 
-  return diversifyRepeatedExcerpts(listing.reviews.slice(0, 3).map((review) => ({
+  if (!intent.asksCommercialDecision && !intent.categories.includes('general') && !intent.categories.includes('experiencia')) {
+    return [];
+  }
+
+  return diversifyRepeatedExcerpts(dedupeExactReviews(listing.reviews.filter((review) => informativeReviewText(review.text)).map((review) => ({
     review: { ...review, excerpt: contextualSnippet(review.text, question) },
     relevance: 0,
-  })), question);
+  }))).slice(0, 3), question);
 }
 
 function inferRetrievalTopic(question) {
@@ -301,52 +474,465 @@ function inferRetrievalTopic(question) {
   const topics = Object.entries(TOPIC_KEYWORDS)
     .filter(
       ([topic, keywords]) =>
-        normalizedQuestion.includes(normalize(topic)) ||
-        keywords.some((keyword) => normalizedQuestion.includes(normalize(keyword))),
+        normalizedIncludesTerm(normalizedQuestion, topic) ||
+        keywords.some((keyword) => normalizedIncludesTerm(normalizedQuestion, keyword)),
     )
     .map(([topic]) => topic);
 
-  return topics.length > 0 ? topics.join(', ') : 'similitud lexical con la pregunta';
+  return topics.length > 0 ? topics.join(', ') : 'coincidencia lexical con la pregunta';
 }
 
-function buildPrompt({ listing, question, facts, evidence }) {
+function buildIntentInstructions(intent) {
+  const categories = intent.categories.join(', ');
+  const lines = [
+    'Responde únicamente a la pregunta actual del usuario. No agregues comentarios sobre temas no solicitados.',
+    `Intención detectada: ${categories}. Usa esta intención para decidir qué fuentes son relevantes.`,
+    'No menciones ausencia de mejoras, quejas o problemas si la pregunta no trata sobre mejoras, quejas o problemas.',
+    'Usa únicamente las fuentes listadas en este prompt. Si una fuente no aparece o no aporta evidencia útil para la intención, no la menciones artificialmente.',
+    'Ficha del anuncio = fuente para datos objetivos: capacidad, habitaciones, camas, baños, precio, rating, host, superhost, amenidades, distrito y descripción objetiva.',
+    'Reseñas recuperadas = fuente para experiencia del huésped: comodidad, limpieza, ubicación percibida, trato del anfitrión, comunicación, quejas, relación precio-calidad, percepción de fotos, recomendación de uso y adecuación para tipos de huésped.',
+    'Si ficha y reseñas aportan evidencia relevante, sintetiza ambas. Si solo una fuente aporta, responde solo con esa fuente.',
+    'Cuando haya varias reseñas relevantes, no bases la respuesta en una sola. Resume patrones comunes y menciona matices importantes de las reseñas recuperadas.',
+    'El score de recuperación no decide por sí solo qué se menciona; considera también frases directamente relacionadas con la pregunta aunque provengan de una reseña con menor score.',
+    'Si varias reseñas coinciden en un tema, usa formulaciones como “Varias reseñas destacan”, “Los huéspedes coinciden en” o “Se repite como fortaleza”.',
+    'Si solo una reseña aporta información real sobre la pregunta, aclara que la evidencia textual es limitada.',
+    'Si no hay evidencia suficiente para la intención preguntada, responde exactamente: “No hay evidencia suficiente en la ficha o reseñas recuperadas para afirmarlo con seguridad.”',
+  ];
+
+  if (intent.asksAboutImprovements) {
+    lines.push(
+      'Como la pregunta trata sobre mejoras, quejas, debilidades o problemas, puedes mencionar mejoras solo si aparecen críticas claras en la ficha o reseñas; si no aparecen, indica que no se identifican mejoras específicas con la evidencia disponible.',
+    );
+  }
+
+  if (intent.asksAboutCapacity) {
+    lines.push(
+      'Como la pregunta trata sobre capacidad, enfócate solo en capacidad, número de huéspedes, habitaciones, camas, baños y reseñas directamente relacionadas si existen.',
+      'Para preguntas de capacidad no menciones mejoras, host, problemas, privacidad ni falta de críticas, salvo que el usuario lo pida explícitamente.',
+    );
+  }
+
+  if (intent.asksAboutComplaints) {
+    lines.push(
+      'Como la pregunta trata sobre quejas o problemas, usa principalmente críticas claras en las reseñas. Si hay una crítica aislada, aclara que no parece frecuente. No inventes problemas.',
+    );
+  }
+
+  if (intent.categories.includes('precio')) {
+    lines.push(
+      'Como la pregunta trata sobre precio o valor, combina precio, rating o amenidades de la ficha con reseñas de valor, recomendación, comodidad, ubicación o cumplimiento solo si esas reseñas existen.',
+    );
+  }
+
+  if (intent.categories.includes('limpieza')) {
+    lines.push('Como la pregunta trata sobre limpieza, usa principalmente reseñas que mencionen limpieza, orden o higiene.');
+  }
+
+  if (intent.categories.includes('ubicacion')) {
+    lines.push('Como la pregunta trata sobre ubicación, usa distrito o descripción objetiva si aportan y reseñas que mencionen zona, cercanía, tranquilidad, acceso o restaurantes.');
+  }
+
+  if (intent.categories.includes('anfitrion')) {
+    lines.push('Como la pregunta trata sobre anfitrión, usa reseñas sobre trato, comunicación, cordialidad o atención, y datos de host/superhost solo si aportan.');
+  }
+
+  if (intent.asksCommercialDecision) {
+    lines.push(
+      'Como la pregunta es de conveniencia comercial, puedes integrar ficha y reseñas para resumir fortalezas, riesgos y señales de decisión.',
+    );
+  }
+
+  return lines.map((line) => `- ${line}`).join('\n');
+}
+
+function capacitySignalsFromEvidence(evidence) {
+  const signals = [];
+  const seen = new Set();
+
+  for (const item of evidence) {
+    const text = cleanReviewText(item.review.text);
+    const normalized = normalize(text);
+    const add = (key, phrase) => {
+      if (!seen.has(key)) {
+        seen.add(key);
+        signals.push(phrase);
+      }
+    };
+
+    if (/(dos|2)\s+personas/.test(normalized) || normalized.includes('pareja')) {
+      add('pareja', 'especialmente cómodo para 2 personas o una pareja');
+    }
+    if (normalized.includes('familia') || normalized.includes('grupo')) {
+      add('familia-grupo', 'con menciones compatibles con familias o grupos');
+    }
+    if (normalized.includes('equipado') || normalized.includes('preparado') || normalized.includes('todo lo necesario')) {
+      add('equipado', 'bien equipado o preparado para la estadía');
+    }
+    if (normalized.includes('comodo') || normalized.includes('comodidad') || normalized.includes('acogedor')) {
+      add('comodidad', 'percibido como cómodo o acogedor');
+    }
+    if (normalized.includes('estadia') || normalized.includes('estancia') || normalized.includes('largo plazo') || normalized.includes('mediana')) {
+      add('estadia', 'adecuado para una estadía cómoda');
+    }
+  }
+
+  return signals;
+}
+
+function capacityAnswerFromFacts(facts, evidence = []) {
+  const wanted = ['Capacidad', 'Habitaciones', 'Camas', 'Baños'];
+  const parts = wanted
+    .map((label) => facts.find((fact) => fact.label === label))
+    .filter(Boolean)
+    .map((fact) => `${fact.label.toLowerCase()}: ${fact.value}`);
+
+  if (parts.length === 0) {
+    return 'La ficha del anuncio no muestra datos suficientes de capacidad, habitaciones, camas o baños para responder con precisión.';
+  }
+
+  const signals = capacitySignalsFromEvidence(evidence);
+  const reviewSentence = signals.length > 0
+    ? ` Las reseñas recuperadas complementan esa ficha y sugieren que puede ser ${signals.slice(0, 3).join(', ')}.`
+    : ' Las reseñas recuperadas no agregan evidencia clara sobre un perfil específico de huésped.';
+
+  return `Según la ficha del anuncio, el alojamiento tiene ${parts.join(', ')}.${reviewSentence}`;
+}
+
+function improvementSignalsFromEvidence(evidence) {
+  const negativeTokens = [
+    'problema',
+    'problemas',
+    'malo',
+    'mala',
+    'sucio',
+    'sucia',
+    'ruido',
+    'ruidoso',
+    'incomodo',
+    'incómodo',
+    'lejos',
+    'demora',
+    'difícil',
+    'dificil',
+    'falta',
+    'fallo',
+    'queja',
+    'quejas',
+    'privacidad',
+    'mantenimiento',
+  ];
+
+  return evidence.filter((item) => {
+    const normalized = normalize(item.review.text);
+    return negativeTokens.some((token) => normalized.includes(normalize(token)));
+  });
+}
+
+function improvementAnswerFromEvidence(facts, evidence) {
+  const host = facts.find((fact) => fact.label === 'Host')?.value;
+  const criticalEvidence = improvementSignalsFromEvidence(evidence);
+
+  if (criticalEvidence.length === 0) {
+    return `Con la evidencia disponible no se identifican mejoras específicas para ${host ? `el host ${host}` : 'el host'}. Las reseñas recuperadas no muestran críticas claras o problemas frecuentes sobre la experiencia del alojamiento.`;
+  }
+
+  const excerpts = criticalEvidence
+    .slice(0, 2)
+    .map((item) => item.review.excerpt ?? cleanReviewText(item.review.text));
+  return `Las mejoras deben revisarse a partir de las críticas encontradas en las reseñas recuperadas: ${excerpts.join(' ')}`;
+}
+
+function topicEvidence(category, evidence) {
+  const keywords = TOPIC_KEYWORDS[category] ?? [];
+  return evidence.filter((item) => {
+    const normalizedText = normalize(item.review.text);
+    return keywords.some((keyword) => normalizedIncludesTerm(normalizedText, keyword));
+  });
+}
+
+function firstEvidenceSnippet(evidence) {
+  return evidence[0]?.review.excerpt ?? (evidence[0] ? contextualSnippet(evidence[0].review.text, '', 180) : '');
+}
+
+const REVIEW_SIGNAL_PATTERNS = {
+  limpieza: [
+    { phrase: 'limpieza del departamento', keywords: ['limpio', 'limpia', 'limpieza', 'impecable'] },
+    { phrase: 'orden y cuidado del espacio', keywords: ['ordenado', 'ordenada', 'aseado', 'higiene'] },
+    { phrase: 'sensación agradable al llegar', keywords: ['aroma', 'agradable', 'muy agradable'] },
+  ],
+  ubicacion: [
+    { phrase: 'ubicación céntrica o conveniente', keywords: ['centrico', 'céntrico', 'ubicacion', 'ubicación', 'perfecta'] },
+    { phrase: 'cercanía a restaurantes y servicios', keywords: ['restaurante', 'restaurantes', 'tienda', 'tiendas', 'farmacia', 'cafe', 'cafeteria', 'cafetería'] },
+    { phrase: 'Barranco como entorno atractivo', keywords: ['barranco', 'malecon', 'malecón'] },
+    { phrase: 'acceso práctico a lo necesario', keywords: ['cerca', 'acceso', 'rodeado', 'necesitabamos', 'necesitábamos'] },
+  ],
+  anfitrion: [
+    { phrase: 'amabilidad del anfitrión o del equipo', keywords: ['amable', 'amables', 'cordial', 'atento', 'atenta'] },
+    { phrase: 'buena comunicación y respuestas', keywords: ['respuesta', 'respondia', 'respondía', 'comunicacion', 'comunicación'] },
+    { phrase: 'apoyo durante check-in o estadía', keywords: ['check in', 'check-in', 'facilito', 'facilitó', 'apoyo', 'ayuda'] },
+  ],
+  precio: [
+    { phrase: 'buena relación entre lo ofrecido y la experiencia', keywords: ['precio', 'valor', 'calidad', 'recomendado', 'recomiendo', 'cumple'] },
+    { phrase: 'comodidad y equipamiento que respaldan el valor', keywords: ['comodo', 'cómodo', 'equipado', 'necesario', 'moderno'] },
+  ],
+  positivo: [
+    { phrase: 'recomendación positiva de los huéspedes', keywords: ['recomendado', 'recomiendo', 'volveria', 'volvería', 'excelente'] },
+    { phrase: 'comodidad y ambiente acogedor', keywords: ['comodo', 'cómodo', 'acogedor', 'bonito', 'agradable'] },
+    { phrase: 'limpieza y buen estado del espacio', keywords: ['limpio', 'limpia', 'impecable', 'nuevo'] },
+    { phrase: 'ubicación favorable', keywords: ['ubicacion', 'ubicación', 'centrico', 'céntrico', 'barranco', 'cerca'] },
+  ],
+};
+
+function reviewHasAnyKeyword(review, keywords) {
+  const normalizedText = normalize(review.text);
+  return keywords.some((keyword) => normalizedIncludesTerm(normalizedText, keyword));
+}
+
+function signalSummaryForCategory(category, evidence) {
+  const patterns = REVIEW_SIGNAL_PATTERNS[category] ?? [];
+  const signals = patterns
+    .map((pattern) => ({
+      phrase: pattern.phrase,
+      count: evidence.filter((item) => reviewHasAnyKeyword(item.review, pattern.keywords)).length,
+    }))
+    .filter((signal) => signal.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  return signals;
+}
+
+function directlyRelevantReviews(category, evidence) {
+  const topicMatches = topicEvidence(category, evidence);
+  const signalPatterns = REVIEW_SIGNAL_PATTERNS[category] ?? [];
+  const signalMatches = evidence.filter((item) =>
+    signalPatterns.some((pattern) => reviewHasAnyKeyword(item.review, pattern.keywords)),
+  );
+  const byIndex = new Map();
+  [...topicMatches, ...signalMatches].forEach((item) => byIndex.set(item.review.index, item));
+  return [...byIndex.values()];
+}
+
+function buildPatternSentence({ label, category, evidence, fallbackFact }) {
+  const relevant = directlyRelevantReviews(category, evidence);
+  if (relevant.length === 0) {
+    return fallbackFact
+      ? `${label}, la ficha aporta ${fallbackFact}, pero las reseñas recuperadas no agregan evidencia específica.`
+      : `${label}, no hay evidencia suficiente en las reseñas recuperadas para afirmarlo con seguridad.`;
+  }
+
+  const signals = signalSummaryForCategory(category, relevant);
+  if (signals.length > 0) {
+    const signalText = signals.slice(0, 4).map((signal) => signal.phrase).join(', ');
+    const prefix = relevant.length > 1 ? `${label}, varias reseñas destacan` : `${label}, la reseña recuperada destaca`;
+    const limitNote = relevant.length === 1 ? ' La evidencia textual es limitada a una reseña.' : '';
+    return `${prefix} ${signalText}.${limitNote}`;
+  }
+
+  const snippets = relevant.slice(0, 2).map((item) => `"${item.review.excerpt ?? contextualSnippet(item.review.text, '', 170)}"`);
+  const prefix = relevant.length > 1 ? `${label}, las reseñas recuperadas apuntan a` : `${label}, una reseña recuperada apunta a`;
+  return `${prefix}: ${snippets.join(' ')}`;
+}
+
+function categoriesForPatternContext(intent) {
+  const categories = new Set(intent.categories.filter((category) => REVIEW_SIGNAL_PATTERNS[category]));
+  if (intent.asksCommercialDecision || intent.categories.includes('general') || intent.categories.includes('experiencia')) {
+    ['ubicacion', 'limpieza', 'anfitrion', 'precio', 'positivo'].forEach((category) => categories.add(category));
+  }
+  return [...categories];
+}
+
+function buildReviewPatternContext(intent, evidence) {
+  const lines = [];
+  for (const category of categoriesForPatternContext(intent)) {
+    const relevant = directlyRelevantReviews(category, evidence);
+    if (relevant.length === 0) {
+      continue;
+    }
+
+    const signals = signalSummaryForCategory(category, relevant);
+    const signalText = signals.length > 0
+      ? signals.slice(0, 4).map((signal) => `${signal.phrase} (${signal.count} reseña${signal.count === 1 ? '' : 's'})`).join('; ')
+      : 'sin patrón repetido claro';
+    const sampleIds = relevant.slice(0, 5).map((item) => `Review ${item.review.index}`).join(', ');
+    lines.push(`- ${category}: ${relevant.length} reseña${relevant.length === 1 ? '' : 's'} relevantes; patrones: ${signalText}; evidencias: ${sampleIds}.`);
+  }
+
+  return lines.join('\n');
+}
+
+function complaintsAnswerFromEvidence(evidence) {
+  const criticalEvidence = improvementSignalsFromEvidence(evidence);
+  if (criticalEvidence.length === 0) {
+    return 'No hay evidencia suficiente de quejas frecuentes en las reseñas recuperadas. La evidencia disponible no muestra críticas claras o problemas repetidos.';
+  }
+
+  const snippets = criticalEvidence.slice(0, 2).map((item) => firstEvidenceSnippet([item]));
+  const frequency = criticalEvidence.length === 1 ? 'Aparece una crítica aislada' : 'Aparecen algunas críticas';
+  return `${frequency} en las reseñas recuperadas: ${snippets.join(' ')} No conviene presentarlo como frecuente sin más evidencia repetida.`;
+}
+
+function focusedExperienceAnswer(intent, facts, evidence) {
+  const parts = [];
+
+  if (intent.categories.includes('limpieza')) {
+    parts.push(buildPatternSentence({ label: 'Sobre limpieza', category: 'limpieza', evidence }));
+  }
+
+  if (intent.categories.includes('ubicacion')) {
+    const district = facts.find((fact) => fact.label === 'Distrito')?.value;
+    parts.push(buildPatternSentence({
+      label: 'Sobre ubicación',
+      category: 'ubicacion',
+      evidence,
+      fallbackFact: district ? `distrito ${district}` : '',
+    }));
+  }
+
+  if (intent.categories.includes('anfitrion')) {
+    const host = facts.find((fact) => fact.label === 'Host')?.value;
+    const superhost = facts.find((fact) => fact.label === 'Superhost')?.value;
+    const hostFacts = [host ? `la ficha identifica al host como ${host}` : '', superhost ? `Superhost: ${superhost}` : '']
+      .filter(Boolean)
+      .join(' y ');
+    const sentence = buildPatternSentence({
+      label: 'Sobre el anfitrión',
+      category: 'anfitrion',
+      evidence,
+      fallbackFact: hostFacts,
+    });
+    parts.push(hostFacts && !sentence.includes('ficha aporta') ? `${sentence} Además, ${hostFacts}.` : sentence);
+  }
+
+  if (intent.categories.includes('positivo')) {
+    parts.push(buildPatternSentence({ label: 'Sobre aspectos positivos', category: 'positivo', evidence }));
+  }
+
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
+function deterministicAnswerForIntent(intent, facts, evidence) {
+  if (intent.asksAboutCapacity && !intent.asksAboutImprovements) {
+    return capacityAnswerFromFacts(facts, evidence);
+  }
+
+  if (intent.asksAboutImprovements) {
+    return improvementAnswerFromEvidence(facts, evidence);
+  }
+
+  if (intent.asksAboutComplaints) {
+    return complaintsAnswerFromEvidence(evidence);
+  }
+
+  const focusCategories = ['limpieza', 'ubicacion', 'anfitrion', 'positivo'];
+  if (intent.categories.some((category) => focusCategories.includes(category))) {
+    return focusedExperienceAnswer(intent, facts, evidence);
+  }
+
+  return null;
+}
+
+function hasIntentText(text, intent) {
+  const normalizedText = normalize(text);
+  return reviewKeywordsForIntent(intent).some((keyword) => normalizedIncludesTerm(normalizedText, keyword));
+}
+
+function shortFactText(text, max = 260) {
+  const clean = cleanReviewText(text);
+  if (clean.length <= max) {
+    return clean;
+  }
+  return `${clean.slice(0, max).trim()}...`;
+}
+
+function selectFactsForIntent(listing, allFacts, intent) {
+  const labels = new Set();
+  const addLabels = (values) => values.forEach((value) => labels.add(value));
+
+  for (const category of intent.categories) {
+    if (category === 'capacidad') {
+      addLabels(['Capacidad', 'Habitaciones', 'Camas', 'Baños']);
+    }
+    if (category === 'precio') {
+      addLabels(['Precio', 'Rating', 'Amenidades', 'Distrito']);
+    }
+    if (category === 'ubicacion') {
+      addLabels(['Distrito']);
+    }
+    if (category === 'anfitrion') {
+      addLabels(['Host', 'Superhost', 'Tiempo como host']);
+    }
+    if (category === 'remoto') {
+      addLabels(['Amenidades']);
+    }
+    if (category === 'fotos') {
+      addLabels(['Rating']);
+    }
+    if (category === 'mejoras') {
+      addLabels(['Host']);
+    }
+    if (category === 'comercial' || category === 'general') {
+      addLabels(['Capacidad', 'Habitaciones', 'Camas', 'Baños', 'Precio', 'Rating', 'Distrito', 'Amenidades', 'Host', 'Superhost']);
+    }
+  }
+
+  const selected = allFacts.filter((fact) => labels.has(fact.label));
+  const descriptionSource = [listing.description, listing.summary].filter(Boolean).join(' ');
+  const shouldIncludeDescription =
+    descriptionSource &&
+    (intent.asksCommercialDecision ||
+      intent.categories.includes('ubicacion') ||
+      intent.categories.includes('precio') ||
+      intent.categories.includes('remoto') ||
+      hasIntentText(descriptionSource, intent));
+
+  if (shouldIncludeDescription) {
+    selected.push({
+      label: 'Descripción objetiva',
+      value: shortFactText(descriptionSource),
+      source: 'Hoja Principal',
+    });
+  }
+
+  return selected;
+}
+
+function buildPrompt({ listing, question, facts, evidence, intent }) {
   const factLines = facts.map((fact) => `- ${fact.label}: ${fact.value} (${fact.source})`).join('\n');
   const evidenceLines = evidence
-    .map((item) => `- Review ${item.review.index} | relevancia ${item.relevance}%: "${item.review.text}"`)
+    .map((item) => `- Review ${item.review.index}: "${cleanReviewText(item.review.text)}"`)
     .join('\n');
+  const patternLines = buildReviewPatternContext(intent, evidence);
+  const intentInstructions = buildIntentInstructions(intent);
 
-  // The model receives facts and retrieved reviews, not the full dataset. This reduces hallucination risk.
+  // The model receives facts and review text only. Retrieval scores stay in the UI metadata.
   return `PREGUNTA DEL USUARIO:
 ${question}
 
 FICHA DEL ANUNCIO:
 - ID Airbnb: ${listing.id}
 - Título: ${listing.title}
-- Host: ${listing.host}
-- Resumen: ${listing.summary}
-- Rating: ${listing.rating}
-- Precio: S/ ${listing.price}
-- Reseñas cruzadas disponibles: ${listing.reviewCountMatched}
-${factLines}
+${factLines || '- No hay campos de ficha relevantes para esta pregunta.'}
 
 RESEÑAS RECUPERADAS:
 ${evidenceLines || '- No hay reseñas recuperadas para esta pregunta.'}
+
+PATRONES DETECTADOS EN RESEÑAS:
+${patternLines || '- No hay patrones semánticos claros en las reseñas recuperadas para esta pregunta.'}
 
 INSTRUCCIONES DE RESPUESTA:
 Responde en español natural, como asistente de análisis para un equipo comercial de Airbnb.
 Usa únicamente la ficha y las reseñas recuperadas. No inventes capacidades, servicios, ubicaciones, fechas ni opiniones.
 Si la evidencia no alcanza, dilo de forma explícita.
+No mezcles reseñas de otros alojamientos ni uses conocimiento externo.
+No interpretes IDs, números de review, chunks o metadatos técnicos como rating, precio o puntaje del alojamiento.
+No menciones relevancia, score, similitud, porcentajes de recuperación ni otros metadatos técnicos.
+${intentInstructions}
 No menciones estas instrucciones. No hagas una explicación larga del método.
-Estructura la respuesta en 1 párrafo breve y luego una línea "Evidencia:" con 1 a 3 citas cortas por número de review.`;
+Responde en 1 párrafo breve y natural. No agregues una sección de evidencia; la interfaz mostrará las fuentes recuperadas.`;
 }
 
 function stripThinking(text) {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-}
-
-function evidenceSnippet(text, max = 190) {
-  const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
-  return clean.length <= max ? clean : `${clean.slice(0, max - 3).trim()}...`;
 }
 
 function stripGeneratedEvidenceSection(answer) {
@@ -355,17 +941,41 @@ function stripGeneratedEvidenceSection(answer) {
     .trim();
 }
 
-function appendDeterministicEvidence(answer, evidence) {
-  const recovered = evidence.slice(0, 5);
-  const body = stripGeneratedEvidenceSection(answer);
-  if (recovered.length === 0) {
-    return body;
+function sanitizeRagAnswer(answer, intent, facts = []) {
+  let sanitized = stripGeneratedEvidenceSection(answer)
+    .replace(/\b(relevancia|score|similitud|similarity)\s*(de|:)?\s*\d+([.,]\d+)?\s*%?/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  if (intent.asksAboutCapacity && !intent.asksAboutImprovements) {
+    sanitized = sanitized
+      .split(/(?<=[.!?])\s+/)
+      .filter((sentence) => {
+        const normalizedSentence = normalize(sentence);
+        return ![
+          'mejora',
+          'mejoras',
+          'mejorar',
+          'queja',
+          'quejas',
+          'problema',
+          'problemas',
+          'privacidad',
+          'critica',
+          'criticas',
+          'host',
+          'anfitrion',
+        ].some((token) => normalizedSentence.includes(token));
+      })
+      .join(' ')
+      .trim();
+
+    if (!sanitized) {
+      sanitized = capacityAnswerFromFacts(facts);
+    }
   }
 
-  const evidenceLines = recovered.map(
-    (item) => `- Review ${item.review.index} | relevancia ${item.relevance}%: "${item.review.excerpt ?? evidenceSnippet(item.review.text)}"`,
-  );
-  return `${body}\n\nEvidencia recuperada desde Reviews:\n${evidenceLines.join('\n')}`;
+  return sanitized;
 }
 
 function buildExtractiveFallback({ listing, question, facts, evidence, reason }) {
@@ -481,16 +1091,20 @@ async function handleRagChat(request, response) {
     return;
   }
 
-  const facts = extractListingFacts(listing);
-  const evidence = retrieveEvidence(listing, question);
+  const allFacts = extractListingFacts(listing);
+  const intent = detectIntent(question);
+  const facts = selectFactsForIntent(listing, allFacts, intent);
+  const evidence = retrieveEvidence(listing, question, intent);
   const retrievalTopic = inferRetrievalTopic(question);
-  const prompt = buildPrompt({ listing, question, facts, evidence });
+  const prompt = buildPrompt({ listing, question, facts, evidence, intent });
   logEvent('CHATBOT pregunta', `listing ${listingId}; "${question.slice(0, 140)}"`);
 
   try {
     const answer = await callOllama(prompt);
     const recoveredEvidence = evidence.slice(0, 5);
-    const groundedAnswer = appendDeterministicEvidence(answer, recoveredEvidence);
+    const groundedAnswer =
+      deterministicAnswerForIntent(intent, facts, recoveredEvidence) ??
+      sanitizeRagAnswer(answer, intent, facts);
     logEvent(
       'CHATBOT respuesta',
       `modo ollama-rag; modelo ${OLLAMA_MODEL}; facts ${facts.length}; reseñas ${evidence.length}; criterio ${retrievalTopic}`,

@@ -13,6 +13,8 @@ La interfaz esta enfocada en mostrar el modulo LLM/chatbot RAG ya validado en no
 - LLM local: Ollama con `llama3.1:8b`.
 - Dataset procesado: `public/data/listings.json`.
 - Fuente original del dataset: `C:\TF_DL\G4_mod_finale.xlsx`.
+- Evidencia tecnica del modulo LLM/RAG:
+  `docs/llm-rag/TF_Chatbot_RAG_Ollama_v6_eval_automatica.ipynb`.
 
 ## Flujo LLM/RAG
 
@@ -20,11 +22,15 @@ La interfaz esta enfocada en mostrar el modulo LLM/chatbot RAG ya validado en no
 2. Angular envia `listingId` y `question` al backend.
 3. Node busca solo ese alojamiento en `public/data/listings.json`.
 4. El RAG recupera ficha del anuncio y resenas relevantes del mismo `ID Airbnb`.
-5. El backend construye un prompt con facts, evidencia y restricciones anti-alucinacion.
+5. El backend construye un prompt con facts, texto real de resenas y restricciones anti-alucinacion.
 6. Ollama genera la respuesta con `llama3.1:8b`.
 7. Angular muestra `answer`, `facts`, `evidence`, `mode`, `model`, `retrievalTopic` y `note`.
 
 Si Ollama falla, la app usa fallback extractivo local y lo marca visualmente como `Fallback extractivo`.
+
+Los scores tecnicos del recuperador no se envian a Ollama como parte del contexto semantico.
+La respuesta del chatbot no debe mencionar `score`, `similitud`, `relevancia` ni porcentajes de recuperacion.
+Esos valores se muestran solo en la seccion visual de evidencia como `relevancia del recuperador`.
 
 ## Ejecutar La Demo
 
@@ -99,6 +105,15 @@ La respuesta debe mostrar:
 - Datos de ficha usados
 - Reseñas recuperadas como evidencia
 - Nota de recuperacion RAG
+- En la evidencia visual, los porcentajes aparecen etiquetados como `relevancia del recuperador`
+
+La respuesta generada no debe incluir metadatos tecnicos como:
+
+```text
+relevancia 28.6%
+score 0.346
+similitud 0.346
+```
 
 Si muestra `extractive-fallback`, revisa que Ollama este abierto y que el modelo exista:
 

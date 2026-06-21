@@ -387,7 +387,7 @@
                               <blockquote>
                                 "{{ item.review.excerpt ?? shortText(item.review.text, 190) }}"
                                 <footer>
-                                  Review {{ item.review.index }} · relevancia {{ item.relevance }}%
+                                  Review {{ item.review.index }} · relevancia del recuperador {{ item.relevance }}%
                                 </footer>
                               </blockquote>
                             }
@@ -531,7 +531,7 @@
                 @for (item of chat.evidence; track item.review.index) {
                   <blockquote>
                     "{{ item.review.excerpt ?? shortText(item.review.text, 190) }}"
-                    <footer>Review {{ item.review.index }} · relevancia {{ item.relevance }}%</footer>
+                    <footer>Review {{ item.review.index }} · relevancia del recuperador {{ item.relevance }}%</footer>
                   </blockquote>
                 }
               </div>
