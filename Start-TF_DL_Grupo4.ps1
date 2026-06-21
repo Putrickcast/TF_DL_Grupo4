@@ -6,71 +6,48 @@ param(
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$RuntimeDir = Join-Path $ProjectRoot ".runtime"
 $CodexNodeBin = "C:\Users\andre\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin"
 $CodexNode = Join-Path $CodexNodeBin "node.exe"
 $CodexPnpm = "C:\Users\andre\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\pnpm.cmd"
 $NgrokExe = Join-Path $ProjectRoot ".tools\ngrok.exe"
 
-function Test-CommandExists {
-  param([string]$Command)
-  $null -ne (Get-Command $Command -ErrorAction SilentlyContinue)
-}
+New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 
-function Resolve-Pnpm {
-  if (Test-CommandExists "pnpm") {
-    return "pnpm"
-  }
-  if (Test-Path -LiteralPath $CodexPnpm) {
-    return $CodexPnpm
-  }
-  throw "No se encontro pnpm. Instala pnpm o revisa la ruta empaquetada de Codex."
-}
-
-function New-ModuleWindow {
+function Write-ModuleScript {
   param(
-    [string]$Title,
-    [string]$Command
+    [string]$Name,
+    [string]$Body
   )
 
-  $wrapped = @"
-`$Host.UI.RawUI.WindowTitle = '$Title'
+  $path = Join-Path $RuntimeDir $Name
+  $prefix = @"
+`$ErrorActionPreference = 'Continue'
 Set-Location -LiteralPath '$ProjectRoot'
 if (Test-Path -LiteralPath '$CodexNodeBin') { `$env:PATH = '$CodexNodeBin;' + `$env:PATH }
-$Command
-Write-Host ''
-Write-Host 'Proceso terminado. Presiona Enter para cerrar esta ventana...'
-Read-Host
+
 "@
-
-  Start-Process -FilePath "powershell.exe" -ArgumentList @(
-    "-NoExit",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-Command",
-    $wrapped
-  ) -WorkingDirectory $ProjectRoot
+  Set-Content -LiteralPath $path -Value ($prefix + $Body) -Encoding UTF8
+  return $path
 }
 
-$Pnpm = Resolve-Pnpm
-
-Write-Host "TF_DL_Grupo4 - lanzador de demo" -ForegroundColor Cyan
-Write-Host "Proyecto: $ProjectRoot"
-Write-Host "Frontend local: http://127.0.0.1:4200/"
-Write-Host "RAG health: http://127.0.0.1:8787/api/health"
-Write-Host "URL publica: https://$NgrokDomain"
-Write-Host ""
-
-if (-not (Test-Path -LiteralPath $NgrokExe)) {
-  Write-Warning "No se encontro .tools\ngrok.exe. Descarga ngrok o ejecuta el setup previo antes de abrir el tunel publico."
+function Start-VisibleScript {
+  param([string]$Path)
+  Start-Process -FilePath "powershell.exe" `
+    -ArgumentList "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$Path`"" `
+    -WorkingDirectory $ProjectRoot
 }
 
-Write-Host "Abriendo 3 ventanas utiles: estado, RAG/modelos y frontend..." -ForegroundColor Green
+function Start-HiddenScript {
+  param([string]$Path)
+  Start-Process -FilePath "powershell.exe" `
+    -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$Path`"" `
+    -WorkingDirectory $ProjectRoot `
+    -WindowStyle Hidden
+}
 
-New-ModuleWindow -Title "TF_DL_Grupo4 - Monitor General" -Command @"
-Write-Host 'Monitor general en vivo'
-Write-Host 'Local:  http://127.0.0.1:4200/'
-Write-Host 'Public: https://$NgrokDomain'
-Write-Host ''
+$monitorScript = Write-ModuleScript "monitor-general.ps1" @"
+`$Host.UI.RawUI.WindowTitle = 'TF_DL_Grupo4 - Monitor General'
 while (`$true) {
   Clear-Host
   Write-Host 'TF_DL_Grupo4 - estado en vivo' -ForegroundColor Cyan
@@ -95,60 +72,83 @@ while (`$true) {
 
   try {
     `$frontend = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:4200/' -TimeoutSec 4
-    Write-Host ('Frontend      OK   http://127.0.0.1:4200/ status {0}' -f `$frontend.StatusCode) -ForegroundColor Green
+    Write-Host ('Frontend      OK   status {0}' -f `$frontend.StatusCode) -ForegroundColor Green
   } catch {
     Write-Host 'Frontend      ERROR no responde en 4200' -ForegroundColor Red
   }
 
   try {
     `$public = Invoke-WebRequest -UseBasicParsing -Uri 'https://$NgrokDomain/api/health' -Headers @{ 'ngrok-skip-browser-warning'='true' } -TimeoutSec 8
-    Write-Host ('ngrok publico OK   https://$NgrokDomain status {0}' -f `$public.StatusCode) -ForegroundColor Green
+    Write-Host ('ngrok publico OK   status {0}' -f `$public.StatusCode) -ForegroundColor Green
   } catch {
     Write-Host 'ngrok publico ERROR tunel publico no responde' -ForegroundColor Red
   }
 
   Write-Host ''
-  Write-Host 'Detalle importante: preguntas del chatbot y eventos MLP/CNN/LLM aparecen en la ventana RAG y Modelos.'
+  Write-Host 'Actividad importante: preguntas del chatbot y eventos MLP/CNN/LLM aparecen en RAG y Modelos.'
+  Write-Host 'Local:  http://127.0.0.1:4200/'
+  Write-Host 'Public: https://$NgrokDomain'
   Write-Host 'Actualiza cada 15 segundos. Ctrl+C para detener solo esta ventana.'
   Start-Sleep -Seconds 15
 }
 "@
 
-New-ModuleWindow -Title "TF_DL_Grupo4 - RAG y Modelos" -Command @"
-Write-Host 'Iniciando backend RAG en http://127.0.0.1:8787'
-Write-Host 'Health: http://127.0.0.1:8787/api/health'
+$ragScript = Write-ModuleScript "rag-modelos.ps1" @"
+`$Host.UI.RawUI.WindowTitle = 'TF_DL_Grupo4 - RAG y Modelos'
+Write-Host 'RAG y Modelos en vivo' -ForegroundColor Cyan
+Write-Host 'Backend: http://127.0.0.1:8787'
 Write-Host 'Aqui veras preguntas/respuestas del chatbot y eventos MLP/CNN/LLM.'
 Write-Host ''
 `$env:OLLAMA_MODEL = '$OllamaModel'
 & '$CodexNode' server/rag-server.mjs
-"@
-
-Start-Sleep -Seconds 3
-
-New-ModuleWindow -Title "TF_DL_Grupo4 - Frontend Demo" -Command @"
-Write-Host 'Iniciando frontend demo en http://127.0.0.1:4200'
-Write-Host 'Modo demo estable: compila Angular y sirve dist/TF_DL_Grupo4 con proxy /api.'
 Write-Host ''
-& '$Pnpm' run build
-if (`$LASTEXITCODE -ne 0) { throw 'Build de Angular fallo.' }
-& '$CodexNode' server/demo-server.mjs
+Write-Host 'Proceso terminado. Presiona Enter para cerrar esta ventana...'
+Read-Host
 "@
 
-Start-Sleep -Seconds 6
+$frontendScript = Write-ModuleScript "frontend-demo.ps1" @"
+& {
+  Write-Host ('[{0}] Build frontend iniciado' -f (Get-Date -Format 'HH:mm:ss'))
+  & '$CodexPnpm' run build
+  if (`$LASTEXITCODE -ne 0) { throw 'Build de Angular fallo.' }
+  Write-Host ('[{0}] Frontend demo en http://127.0.0.1:4200' -f (Get-Date -Format 'HH:mm:ss'))
+  & '$CodexNode' server/demo-server.mjs
+} *> (Join-Path '$ProjectRoot' 'frontend.log')
+"@
 
-if (Test-Path -LiteralPath $NgrokExe) {
-  $ngrokCommand = "Set-Location -LiteralPath '$ProjectRoot'; & '$NgrokExe' http --url=$NgrokDomain --log=stdout --log-level=info http://127.0.0.1:4200 *> ngrok.log"
-  Start-Process -FilePath "powershell.exe" -ArgumentList @(
-    "-ExecutionPolicy",
-    "Bypass",
-    "-Command",
-    $ngrokCommand
-  ) -WorkingDirectory $ProjectRoot -WindowStyle Hidden
-}
+$ngrokScript = Write-ModuleScript "ngrok-public.ps1" @"
+& {
+  for (`$i = 0; `$i -lt 45; `$i++) {
+    try {
+      Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:4200/' -TimeoutSec 2 | Out-Null
+      break
+    } catch {
+      Start-Sleep -Seconds 2
+    }
+  }
+
+  if (Test-Path -LiteralPath '$NgrokExe') {
+    & '$NgrokExe' http --url=$NgrokDomain --log=stdout --log-level=info http://127.0.0.1:4200
+  } else {
+    Write-Host 'No se encontro .tools\ngrok.exe'
+  }
+} *> (Join-Path '$ProjectRoot' 'ngrok.log')
+"@
+
+Write-Host "TF_DL_Grupo4 - lanzador de demo" -ForegroundColor Cyan
+Write-Host "Proyecto: $ProjectRoot"
+Write-Host "Frontend local: http://127.0.0.1:4200/"
+Write-Host "RAG health: http://127.0.0.1:8787/api/health"
+Write-Host "URL publica: https://$NgrokDomain"
+Write-Host ""
+Write-Host "Abriendo 2 ventanas visibles: Monitor General y RAG y Modelos..." -ForegroundColor Green
+
+Start-VisibleScript $monitorScript
+Start-VisibleScript $ragScript
+Start-HiddenScript $frontendScript
+Start-HiddenScript $ngrokScript
 
 Write-Host ""
-Write-Host "Ventanas abiertas." -ForegroundColor Green
-Write-Host "Abre localmente:  http://127.0.0.1:4200/"
-Write-Host "Comparte:         https://$NgrokDomain"
-Write-Host ""
-Write-Host "Tip: deja abiertas solo Monitor General, RAG y Modelos, y Frontend Demo mientras prueban la demo."
+Write-Host "Listo." -ForegroundColor Green
+Write-Host "Deja abiertas solo las ventanas Monitor General y RAG y Modelos."
+Write-Host "El frontend y ngrok corren ocultos. Logs: frontend.log y ngrok.log."
