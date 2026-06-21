@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
   ChatResult,
@@ -24,6 +24,7 @@ import {
 } from './scoring';
 
 type ListingFilter = 'all' | 'withReviews' | 'withoutReviews';
+type SectionId = 'datos' | 'modelos' | 'chatbot' | 'evidencia';
 
 const RAG_CHAT_ENDPOINT = '/api/rag-chat';
 const TELEMETRY_ENDPOINT = '/api/telemetry';
@@ -69,8 +70,10 @@ export class App implements OnInit, OnDestroy {
   readonly ragModelName = OLLAMA_MODEL_NAME;
 
   private readonly uploadedObjectUrls: string[] = [];
+  private readonly sectionIds: SectionId[] = ['datos', 'modelos', 'chatbot', 'evidencia'];
   private imageLoadSequence = 0;
   private chatSequence = 0;
+  private scrollSyncFrame = 0;
 
   readonly listings = computed(() => this.dataset()?.listings ?? []);
   readonly meta = computed(() => this.dataset()?.meta ?? null);
@@ -211,6 +214,20 @@ export class App implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.uploadedObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+    if (this.scrollSyncFrame) {
+      cancelAnimationFrame(this.scrollSyncFrame);
+    }
+  }
+
+  @HostListener('window:scroll')
+  onWindowScroll(): void {
+    if (this.scrollSyncFrame) {
+      return;
+    }
+    this.scrollSyncFrame = requestAnimationFrame(() => {
+      this.scrollSyncFrame = 0;
+      this.syncActiveSectionFromScroll();
+    });
   }
 
   selectListing(listingId: string): void {
@@ -328,9 +345,9 @@ export class App implements OnInit, OnDestroy {
     void this.runQuestion(true);
   }
 
-  scrollToSection(sectionId: 'datos' | 'modelos' | 'chatbot' | 'evidencia'): void {
+  scrollToSection(sectionId: SectionId): void {
     this.activeSection.set(sectionId);
-    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    this.scrollElementBelowTopbar(sectionId);
   }
 
   async onImageFiles(event: Event): Promise<void> {
@@ -516,6 +533,40 @@ export class App implements OnInit, OnDestroy {
         thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
       }
     });
+  }
+
+  private topbarOffset(): number {
+    const topbar = document.querySelector<HTMLElement>('.topbar');
+    return (topbar?.offsetHeight ?? 56) + 18;
+  }
+
+  private scrollElementBelowTopbar(sectionId: SectionId): void {
+    const element = document.getElementById(sectionId);
+    if (!element) {
+      return;
+    }
+
+    const top = window.scrollY + element.getBoundingClientRect().top - this.topbarOffset();
+    window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  }
+
+  private syncActiveSectionFromScroll(): void {
+    const offset = this.topbarOffset() + 8;
+    const sections = this.sectionIds
+      .map((id) => ({ id, element: document.getElementById(id) }))
+      .filter((item): item is { id: SectionId; element: HTMLElement } => Boolean(item.element));
+
+    if (sections.length === 0) {
+      return;
+    }
+
+    const current =
+      [...sections]
+        .reverse()
+        .find(({ element }) => element.getBoundingClientRect().top <= offset)?.id ?? sections[0].id;
+    if (current !== this.activeSection()) {
+      this.activeSection.set(current);
+    }
   }
 
   private analyzeImageUrl(

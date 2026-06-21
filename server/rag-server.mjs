@@ -159,8 +159,32 @@ function reviewRelevance(review, tokens) {
   return matches / Math.max(tokens.length, 1);
 }
 
-function contextualSnippet(text, question, max = 210) {
-  const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
+function cleanReviewText(text) {
+  return String(text ?? '')
+    .replace(/<br\s*\/?>/gi, '. ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function findOriginalIndex(source, token) {
+  if (!token) {
+    return -1;
+  }
+
+  const lowerSource = source.toLowerCase();
+  const direct = lowerSource.indexOf(token.toLowerCase());
+  if (direct >= 0) {
+    return direct;
+  }
+
+  const words = [...source.matchAll(/\S+/g)];
+  const match = words.find((word) => normalize(word[0]).includes(token));
+  return match?.index ?? -1;
+}
+
+function contextualSnippetLegacy(text, question, max = 210) {
+  const clean = cleanReviewText(text);
   if (clean.length <= max) {
     return clean;
   }
@@ -196,11 +220,55 @@ function contextualSnippet(text, question, max = 210) {
 
   const normalizedSource = normalize(source);
   const hitToken = best?.firstHit || tokens.find((token) => normalizedSource.includes(token)) || '';
-  const hitIndex = hitToken ? Math.max(normalizedSource.indexOf(hitToken), 0) : 0;
+  const hitIndex = findOriginalIndex(source, hitToken);
   const start = Math.max(0, hitIndex - Math.floor(max * 0.35));
   const end = Math.min(source.length, start + max);
   const excerpt = source.slice(start, end).trim();
   return `${start > 0 ? '...' : ''}${excerpt}${end < source.length ? '...' : ''}`;
+}
+
+function contextualSnippet(text, question, max = 210) {
+  const clean = cleanReviewText(text);
+  if (clean.length <= max) {
+    return clean;
+  }
+
+  const primaryTokens = tokenize(question).filter((token) => token.length > 2 && !QUERY_STOP_WORDS.has(token));
+  const tokens = expandedQuestionTokens(question).filter((token) => token.length > 2);
+  const leadingExcerpt = clean.slice(0, max).trim();
+  const normalizedLeadingExcerpt = normalize(leadingExcerpt);
+  if (tokens.some((token) => normalizedLeadingExcerpt.includes(token))) {
+    return `${leadingExcerpt}${clean.length > max ? '...' : ''}`;
+  }
+
+  const tokenPositions = [...primaryTokens, ...tokens]
+    .map((token) => ({ token, index: findOriginalIndex(clean, token) }))
+    .filter((item) => item.index >= 0)
+    .sort((a, b) => a.index - b.index);
+  const firstHit = tokenPositions[0]?.index ?? 0;
+  const start = Math.max(0, firstHit - Math.floor(max * 0.25));
+  const end = Math.min(clean.length, start + max);
+  const excerpt = clean.slice(start, end).trim();
+  return `${start > 0 ? '...' : ''}${excerpt}${end < clean.length ? '...' : ''}`;
+}
+
+function diversifyRepeatedExcerpts(evidence, question) {
+  const seen = new Map();
+  return evidence.map((item) => {
+    const key = normalize(item.review.excerpt ?? '');
+    if (!key || !seen.has(key)) {
+      seen.set(key, item.review.index);
+      return item;
+    }
+
+    return {
+      ...item,
+      review: {
+        ...item.review,
+        excerpt: contextualSnippet(item.review.text, question, 260),
+      },
+    };
+  });
 }
 
 function retrieveEvidence(listing, question) {
@@ -216,16 +284,16 @@ function retrieveEvidence(listing, question) {
     .slice(0, 5);
 
   if (ranked.length > 0) {
-    return ranked.map((item) => ({
+    return diversifyRepeatedExcerpts(ranked.map((item) => ({
       review: { ...item.review, excerpt: contextualSnippet(item.review.text, question) },
       relevance: Math.round(item.relevance * 1000) / 10,
-    }));
+    })), question);
   }
 
-  return listing.reviews.slice(0, 3).map((review) => ({
+  return diversifyRepeatedExcerpts(listing.reviews.slice(0, 3).map((review) => ({
     review: { ...review, excerpt: contextualSnippet(review.text, question) },
     relevance: 0,
-  }));
+  })), question);
 }
 
 function inferRetrievalTopic(question) {
