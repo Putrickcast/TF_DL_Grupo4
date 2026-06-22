@@ -7,7 +7,7 @@
     ],
     "context": "Trabajo final Deep Learning multimodal - Airbnb Barranco, Lima",
     "listingCount": 52,
-    "reviewCount": 1552,
+    "reviewCount": 1592,
     "matchedListingCount": 52,
     "unmatchedListingCount": 0,
     "district": "Barranco",
@@ -28,20 +28,20 @@
         49
       ],
       [
-        "anfitrión",
-        49
-      ],
-      [
         "limpieza",
         48
       ],
       [
+        "anfitrión",
+        48
+      ],
+      [
         "comodidad",
-        46
+        47
       ],
       [
         "precio",
-        36
+        37
       ]
     ]
   },
@@ -3116,7 +3116,7 @@
       "searchText": "soho vista al mar: internet alta velocidad 2 huéspedes - 1 habitación - 2 camas - 1 baño zona de trabajo una habitación con wifi que es ideal para trabajar. llegada autónoma realiza tu llegada fácilmente mediante el sistema de cerradura inteligente. nelly tiene la categoría de superanfitrión los superanfitriones son anfitriones experimentados, con evaluaciones excelentes. loft piso 19: observa el mar, respira la brisa del pacífico, disfruta del sol y siente el alma de barranco. estadía como en un hotel de categoría, con confort y buen gusto, una experiencia inolvidable! soho ubicado en el corazón de barranco, barrio bohemio conocido por excelentes restaurantes y bares de moda, boutiques y galerías de arte; disfruta de la gastronomía peruana y descubre la cultura. la recepción 24 x 7 wifi: 50 mbps & (conexión ethernet) con filtro de agua 💦 para beber. el espacio moderno edificio año 2023, con lujosas áreas comunes que te permitirán compartir con tus invitados. este apartamento estilo contemporáneo en el piso 19 ha sido diseñado y elaborado en cada detalle a medida, esto hace única cada una de sus piezas, minuciosamente elegido, pensando en nuestros huéspedes. usted sentirá el confort y diseño de un hotel 5 estrellas. eres bienvenido a disfrutar de esta experiencia. acceso de los huéspedes - áreas que tienes a disposición sin costo adicional (solo huespedes registrados): * piscina y jacuzzi * gimnasio * coworking * sala bar con mesa de billar y tv * bicicletario - áreas con previa reserva y costo adicional (con invitados): * parrilla * sala bar con mesa de billar y tv * sky bar consultar disponibilidad previa solicitud! detalle áreas comunes - acceso a la piscina y jacuzzi: disponible todos los días desde las 8:00 a.m, excepto los lunes y jueves, uso a partir de las 12:00 p. m. y los sábados a partir de las 9:00 a. m., cierre de piscina las 10:00 p. m. acceso: torre b - piso 23, hacer uso de las escaleras hacia el piso 24 y listo. acceso torre a - piso a acceso a azotea o piso 24. - gimnasio equipado con buenas máquinas de ejercicio y una zona de yoga. acceso: torre a - piso 1. luego de registrarse en la recepción, abrir la puerta contrafuego que se encuentra al frente de los ascensores de la torre a - coworking: área de trabajo corporativo acceso: piso 1 en el pasillo camino a la torre b. luego de registrarse en la recepción solicitar apertura del coworking. - sala de bar (uso del juego de billar durante 2 horas ) consultar disponibilidad en recepción acceso: torre a - piso 1. luego de registrarse en la recepción, abrir la puerta contrafuego que se encuentra al frente de los ascensores de la torre a otros aspectos a destacar en soho studio 4 encontraras espacios sumamente agradables, limpios y modernos que te garantiza una estadía placentera. cerca a nuestro departamento encontrarás: - restaurantes - minimarket - coffe shop - heladeria y mucho comercio alrededor del área. acceso al centro de lima y alrededores a través de la estación del metropolitano a pocas cuadras."
     },
     {
-      "id": "1052839189990171529",
+      "id": "51265033",
       "city": "Lima",
       "district": "Barranco",
       "collectionDate": "28/10/2024",
@@ -6329,7 +6329,7 @@
       "searchText": "precioso apartamento en barranco g15/20 c/piscina 2 huéspedes - 1 habitación - 1 cama - 1 baño favorito entre huéspedes; aspectos destacados: sumérgete; llegada autónoma; vista al océano y al parque departamento en barranco, cerca de miraflores, con vista al mar y áreas verdes; cuenta con piscina, zonas comunes, centro de lavado y seguridad permanente."
     },
     {
-      "id": "11948859709375421291",
+      "id": "1520337706293508110",
       "city": "Lima",
       "district": "Barranco",
       "collectionDate": "17/06/2026",
@@ -6356,19 +6356,259 @@
       "guestPhoneRequired": true,
       "availabilityOver90": true,
       "reviewCountExcel": 2,
-      "reviewCountMatched": 2,
+      "reviewCountMatched": 42,
       "reviews": [
         {
-          "date": "28/10/2024",
-          "index": 1362,
-          "text": "El alojamiento de Raúl fue perfecto. Dos televisores inteligentes cargados previamente con cuentas. Balcón, cocina, gimnasio, todo en el edificio. Excelentes opciones gastronómicas en Rappi y área vibrante segura para caminar",
+          "date": "20/06/2026",
+          "index": 2580,
+          "text": "Absolutely loved staying here for our trip to Lima. Everything from the apartment to the location is perfect for a couple. The balcony is an added benefit of the place, however it can get loud during rush hour since the apartment is right in front of a busy street. <br/>Wifi was perfect and the smart tv made the whole stay worth it!",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2581,
+          "text": "Nos encantó quedarnos aquí para nuestro viaje a Lima. Todo, desde el apartamento hasta la ubicación, es perfecto para una pareja. El balcón es un beneficio adicional del lugar, sin embargo, puede ser ruidoso durante la hora pico, ya que el apartamento está justo enfrente de una calle concurrida. <br/>¡El wifi era perfecto y la televisión inteligente hizo que valiera la pena toda la estadía!",
           "sentimentHint": "positivo"
         },
         {
-          "date": "28/10/2024",
-          "index": 1363,
-          "text": "Departamento como en la descripción, todo limpio y organizado. Anfitriones cariñosos y educados. Maravillosa ubicación. ¡Ubicación segura!",
+          "date": "20/06/2026",
+          "index": 2582,
+          "text": "Es comoda y agradable, exelente espacio si buscas vida nocturna en Barranco.",
           "sentimentHint": "positivo"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2583,
+          "text": "really enjoyed staying at Jose’s place. I ended up staying for three months, and it became one of my favorite stays I’ve ever had.<br/>Jose was incredibly accommodating throughout my time in Peru. I traveled in and out of the country several times, and he was always flexible and willing to work with me on extending or adjusting my stays. When my phone was stolen, he was especially helpful and supportive, which I greatly appreciated.<br/>The apartment itself is beautiful, spacious, and comfortable, with a great setup for working remotely. The weekly maid service was a huge plus and helped keep everything clean and organized. Jose was always communicative, friendly, and available whenever I needed assistance.<br/>The location in Barranco is excellent—walking distance to great restaurants, cafes, shops, and everything you need. It’s one of the best neighborhoods in Lima and made exploring the city incredibly easy.<br/>Overall, this was my favorite stay in Peru. I look forward to coming back and stayi",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2584,
+          "text": "Realmente disfruté quedarme en casa de José. Terminé quedándome tres meses y se convirtió en una de mis estadías favoritas.<br/>José fue increíblemente servicial durante todo mi tiempo en Perú. Viajé dentro y fuera del país varias veces, y siempre fue flexible y estuvo dispuesto a colaborar conmigo para extender o ajustar mis estadías. Cuando me robaron el teléfono, fue especialmente servicial y solidario, lo cual aprecié mucho.<br/>El departamento en sí es hermoso, espacioso y cómodo, con una excelente configuración para trabajar de forma remota. El servicio de limpieza semanal fue una gran ventaja y ayudó a mantener todo limpio y organizado. José siempre fue comunicativo, amable y estaba disponible cuando necesitaba ayuda.<br/>La ubicación en Barranco es excelente: a poca distancia a pie de excelentes restaurantes, cafés, tiendas y todo lo que necesitas. Es uno de los mejores barrios de Lima y facilitó muchísimo explorar la ciudad.<br/>En general, esta fue mi estadía favorita en Perú. Espero volver y hospedarme",
+          "sentimentHint": "positivo"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2585,
+          "text": "Jose place was awesome everything was wonderful it was home away from home the apartment had all the amenities washer and dryer silverware to eat and cook with the bed was comfortable and Jose goes the extra mile to make sure you have everything you need next time I'm in Lima I'm not going anywhere else but to Jose place I highly recommend his place thank you",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2586,
+          "text": "El lugar de José fue increíble, todo fue maravilloso, fue un hogar lejos de casa, el apartamento tenía todas las comodidades, lavadora y secadora, cubiertos para comer y cocinar, la cama era cómoda y José hace un esfuerzo adicional para asegurarse de que tengas todo lo que necesitas, la próxima vez que esté en Lima no voy a ir a ningún otro lugar que no sea el lugar de José, recomiendo encarecidamente su lugar, gracias",
+          "sentimentHint": "positivo"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2587,
+          "text": "jose e una persona molto disponibile!!! una persona dove trovi casa! dove puoi trankillamente parlare e chiedere ogni cosa! ogni volta vengo da lui e lui e il suo team sono sempre disponibili! mi fs piacere trovare delle persone come loro! grazie di tutto! ogni volta verro qui!",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2588,
+          "text": "¡José es una persona muy servicial! ¡Una persona con la que te sientes como en casa! ¡Con quien puedes hablar fácilmente y pedir todo! ¡Cada vez que voy a él y él y su equipo siempre están disponibles! ¡Me complace encontrar personas como ellos! ¡Gracias por todo! ¡Cada vez que vengo aquí!",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2589,
+          "text": "We had a great stay in the beautiful apartment, it was extremely comfortable and very spacious. The apartment was well set up and had everything we needed. Jose was extremely responsive and made our stay extremely smooth and enjoyable. We would highly recommend staying here.",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2590,
+          "text": "Tuvimos una gran estadía en el hermoso apartamento, fue extremadamente cómodo y muy espacioso. El apartamento estaba bien preparado y tenía todo lo que necesitábamos. José fue extremadamente receptivo e hizo que nuestra estancia fuera extremadamente fluida y agradable. Recomendamos encarecidamente quedarse aquí.",
+          "sentimentHint": "positivo"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2591,
+          "text": "Jose è sempre una persona meravigliosa non ho nulla da dire con la disponibile è correttezza nei confronti dei ospiti! Grazie e sempre verrò da loro!",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2592,
+          "text": "José siempre es una persona maravillosa; ¡no tengo nada que decir sobre su amabilidad e imparcialidad con los huéspedes! ¡Gracias! ¡Siempre me hospedaré con ellos!",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2593,
+          "text": "Excellent stay and location! Will be back 🙌🏼",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2594,
+          "text": "¡Excelente estancia y ubicación! Volveré 🙌🏼",
+          "sentimentHint": "positivo"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2595,
+          "text": "Excelente ubicación, José fue muy amable",
+          "sentimentHint": "positivo"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2596,
+          "text": "Tienes una valoración de 5,0 sobre 5 en un total de 13 reseñas.",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2597,
+          "text": "Este alojamiento es un Favorito entre huéspedes según valoraciones, reseñas y fiabilidad",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2598,
+          "text": "Las reseñas de los huéspedes mencionan",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2599,
+          "text": "Orden de las valoraciones: Las más relevantes",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2600,
+          "text": "Nos encantó quedarnos aquí para nuestro viaje a Lima. Todo, desde el apartamento hasta la ubicación, es perfecto para una pareja. El balcón es un beneficio adicional del lugar, sin embargo, puede ser ruidoso durante la hora pico, ya que el apartamento está justo enfrente de una calle concurrida.",
+          "sentimentHint": "positivo"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2601,
+          "text": "¡El wifi era perfecto y la televisión inteligente hizo que valiera la pena toda la estadía!",
+          "sentimentHint": "positivo"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2602,
+          "text": "¡Muchas Gracias, Mohammed! 🙌 Fue un placer hospedarte. Me alegra que tu estadía haya sido cómoda y que todo haya estado a la altura de tus expectativas. ¡Te esperamos nuevamente!🤗",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2603,
+          "text": "¡Muchas gracias, Amado! Fue un gusto recibirte. Cuando quieras volver será un placer hospedarte nuevamente.🤗",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2604,
+          "text": "¡Muchas gracias, Yimmi! Fue un gusto recibirte. Cuando quieras volver será un placer hospedarte nuevamente.🤗",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2605,
+          "text": "La Línea de la Concepción, España",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2606,
+          "text": "¡Muchas gracias, Yessine! Fue un gusto recibirte. Cuando quieras volver será un placer hospedarte nuevamente.🤗",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2607,
+          "text": "Estadía de más de una semana",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2608,
+          "text": "Realmente disfruté quedarme en casa de José. Terminé quedándome tres meses y se convirtió en una de mis estadías favoritas.",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2609,
+          "text": "José fue increíblemente servicial durante todo mi tiempo en Perú. Viajé dentro y fuera del país varias veces, y siempre fue flexible y estuvo dispuesto a colaborar conmigo para extender o ajustar mis estadías. Cuando me robaron el teléfono, fue especialmente servicial y solidario, lo cual aprecié mucho.",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2610,
+          "text": "El departamento en sí es hermoso, espacioso y cómodo, con una excelente configuración para trabajar de forma remota. El servicio de limpieza semanal fue una gran ventaja y ayudó a mantener todo limpio y organizado. José siempre fue comunicativo, amable y estaba disponible cuando necesitaba ayuda.",
+          "sentimentHint": "positivo"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2611,
+          "text": "La ubicación en Barranco es excelente: a poca distancia a pie de excelentes restaurantes, cafés, tiendas y todo lo que necesitas. Es uno de los mejores barrios de Lima y facilitó muchísimo explorar la ciudad.",
+          "sentimentHint": "positivo"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2612,
+          "text": "En general, esta fue mi estadía favorita en Perú. Espero volver y hospedarme",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2613,
+          "text": "Estimado Michael, ¡Muchas gracias por tus lindas palabras!🙌Nos alegra saber que pasaste una excelente estadía. Siempre buscamos que nuestros huéspedes se sientan como en casa, y comentarios como el suyo nos motivan a seguir mejorando. Esperamos tener el placer de recibirlo nuevamente en el futuro. ¡Hasta la próxima!🤗",
+          "sentimentHint": "positivo"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2614,
+          "text": "Estimado Carlos, ¡Muchas gracias por tus lindas palabras!🙌Nos alegra saber que pasaste una excelente estadía. Siempre buscamos que nuestros huéspedes se sientan como en casa, y comentarios como el suyo nos motivan a seguir mejorando. Esperamos tener el placer de recibirlo nuevamente en el futuro. ¡Hasta la próxima!🤗",
+          "sentimentHint": "positivo"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2615,
+          "text": "¡Muchas Gracias, Alannah! 🙌 Fue un placer hospedarte. Me alegra que tu estadía haya sido cómoda y que todo haya estado a la altura de tus expectativas. ¡Te esperamos nuevamente!🤗",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2616,
+          "text": "¡Muchas Gracias, Carlos! 🙌 Fue un placer hospedarte. Me alegra que tu estadía haya sido cómoda y que todo haya estado a la altura de tus expectativas. ¡Te esperamos nuevamente!🤗",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2617,
+          "text": "¡Muchas gracias, Collin! Fue un gusto recibirte. Cuando quieras volver será un placer hospedarte nuevamente.🤗",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2618,
+          "text": "¡Muchas gracias, Stephen! Fue un gusto recibirte. Cuando quieras volver será un placer hospedarte nuevamente.🤗",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2619,
+          "text": "Estadía de alrededor de una semana",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2620,
+          "text": "¡Muchas gracias, Stefano! Fue un gusto recibirte. Cuando quieras volver será un placer hospedarte nuevamente.🤗",
+          "sentimentHint": "neutro"
+        },
+        {
+          "date": "20/06/2026",
+          "index": 2621,
+          "text": "¡Muchas gracias, Ricardo! Fue un gusto recibirte. Cuando quieras volver será un placer hospedarte nuevamente.🤗",
+          "sentimentHint": "neutro"
         }
       ],
       "searchText": "apartamento en barranco-lima 2 huéspedes - 1 habitación - 1 cama - 1 baño favorito entre huéspedes; aspectos destacados: sumérgete; llegada autónoma; raúl tiene la categoría de superanfitrión departamento en edificio moderno en barranco, cerca del malecón y de miraflores. incluye cocina equipada, wifi, smart tv, piscina, gimnasio, coworking, zona de parrilla y lavandería de pago."

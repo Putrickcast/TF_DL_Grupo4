@@ -10,9 +10,80 @@ $RuntimeDir = Join-Path $ProjectRoot ".runtime"
 $CodexNodeBin = "C:\Users\andre\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin"
 $CodexNode = Join-Path $CodexNodeBin "node.exe"
 $CodexPnpm = "C:\Users\andre\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\pnpm.cmd"
+$NgCmd = Join-Path $ProjectRoot "node_modules\.bin\ng.cmd"
 $NgrokExe = Join-Path $ProjectRoot ".tools\ngrok.exe"
 
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
+
+function Stop-ProjectRuntime {
+  $patterns = @(
+    'server/rag-server\.mjs',
+    'server\\rag-server\.mjs',
+    'server/demo-server\.mjs',
+    'server\\demo-server\.mjs',
+    'ng serve --host 127\.0\.0\.1 --port 4200',
+    '@angular\\cli\\bin\\ng\.js',
+    '@angular/cli/bin/ng\.js',
+    '\\.runtime\\rag-modelos\.ps1',
+    '\\.runtime\\frontend-demo\.ps1',
+    '\\.runtime\\monitor-general\.ps1',
+    '\\.runtime\\ngrok-public\.ps1',
+    '\\.tools\\ngrok\.exe',
+    '\.tools/ngrok\.exe'
+  )
+
+  $processes = Get-CimInstance Win32_Process | Where-Object {
+    $commandLine = $_.CommandLine
+    if (-not $commandLine) { return $false }
+    foreach ($pattern in $patterns) {
+      if ($commandLine -match $pattern) { return $true }
+    }
+    return $false
+  }
+
+  foreach ($process in $processes) {
+    try {
+      Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
+    } catch {
+      Write-Host ("No se pudo detener PID {0}: {1}" -f $process.ProcessId, $_.Exception.Message) -ForegroundColor Yellow
+    }
+  }
+
+  foreach ($port in @(4200, 8787)) {
+    $connections = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+    foreach ($connection in $connections) {
+      try {
+        Stop-Process -Id $connection.OwningProcess -Force -ErrorAction Stop
+      } catch {
+        Write-Host ("No se pudo liberar puerto {0} PID {1}: {2}" -f $port, $connection.OwningProcess, $_.Exception.Message) -ForegroundColor Yellow
+      }
+    }
+  }
+}
+
+function Wait-HttpOk {
+  param(
+    [string]$Name,
+    [string]$Url,
+    [int]$TimeoutSeconds = 45
+  )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    try {
+      $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 4
+      if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
+        Write-Host ("{0} OK ({1})" -f $Name, $response.StatusCode) -ForegroundColor Green
+        return $true
+      }
+    } catch {
+      Start-Sleep -Seconds 2
+    }
+  }
+
+  Write-Host ("{0} no respondio en {1} segundos: {2}" -f $Name, $TimeoutSeconds, $Url) -ForegroundColor Yellow
+  return $false
+}
 
 function Write-ModuleScript {
   param(
@@ -25,6 +96,7 @@ function Write-ModuleScript {
 `$ErrorActionPreference = 'Continue'
 Set-Location -LiteralPath '$ProjectRoot'
 if (Test-Path -LiteralPath '$CodexNodeBin') { `$env:PATH = '$CodexNodeBin;' + `$env:PATH }
+`$env:NG_CLI_ANALYTICS = 'false'
 
 "@
   Set-Content -LiteralPath $path -Value ($prefix + $Body) -Encoding UTF8
@@ -108,11 +180,12 @@ Read-Host
 
 $frontendScript = Write-ModuleScript "frontend-demo.ps1" @"
 & {
-  Write-Host ('[{0}] Build frontend iniciado' -f (Get-Date -Format 'HH:mm:ss'))
-  & '$CodexPnpm' run build
-  if (`$LASTEXITCODE -ne 0) { throw 'Build de Angular fallo.' }
-  Write-Host ('[{0}] Frontend demo en http://127.0.0.1:4200' -f (Get-Date -Format 'HH:mm:ss'))
-  & '$CodexNode' server/demo-server.mjs
+  Write-Host ('[{0}] Angular dev server iniciado en http://127.0.0.1:4200' -f (Get-Date -Format 'HH:mm:ss'))
+  if (Test-Path -LiteralPath '$NgCmd') {
+    & '$NgCmd' serve --host 127.0.0.1 --port 4200 --proxy-config proxy.conf.json --allowed-hosts=true
+  } else {
+    & '$CodexPnpm' start
+  }
 } *> (Join-Path '$ProjectRoot' 'frontend.log')
 "@
 
@@ -141,12 +214,17 @@ Write-Host "Frontend local: http://127.0.0.1:4200/"
 Write-Host "RAG health: http://127.0.0.1:8787/api/health"
 Write-Host "URL publica: https://$NgrokDomain"
 Write-Host ""
+Write-Host "Limpiando procesos previos de Angular/RAG/ngrok..." -ForegroundColor Yellow
+Stop-ProjectRuntime
+Start-Sleep -Seconds 2
 Write-Host "Abriendo 2 ventanas visibles: Monitor General y RAG y Modelos..." -ForegroundColor Green
 
-Start-VisibleScript $monitorScript
 Start-VisibleScript $ragScript
 Start-HiddenScript $frontendScript
+Wait-HttpOk -Name "RAG API" -Url "http://127.0.0.1:8787/api/health" -TimeoutSeconds 35 | Out-Null
+Wait-HttpOk -Name "Frontend" -Url "http://127.0.0.1:4200/" -TimeoutSeconds 45 | Out-Null
 Start-HiddenScript $ngrokScript
+Start-VisibleScript $monitorScript
 
 Write-Host ""
 Write-Host "Listo." -ForegroundColor Green
