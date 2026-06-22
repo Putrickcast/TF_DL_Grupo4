@@ -77,6 +77,10 @@ Si Ollama no esta instalado, no esta corriendo o el modelo no esta descargado, l
 
 El LLM no calcula los scores CNN ni MLP. El chatbot explica con evidencia recuperada, mientras vision, tabular, resenas y fusion permanecen auditables mediante archivos JSON.
 
+La interfaz incorpora el puente textual del notebook mediante el boton `Resumen comercial`. Esta consulta genera una sintesis orientada a decision con fortalezas, riesgos, datos operativos, senales sobre limpieza, ubicacion, host, precio y una recomendacion preliminar. A diferencia de las preguntas puntuales, el resumen comercial puede usar una muestra ampliada de resenas por cobertura de categorias; por eso la evidencia visual distingue entre `relevancia del recuperador` y `seleccion por cobertura comercial`.
+
+El boton `Exportar decision + chat JSON` descarga un artefacto auditable por alojamiento: decision final, scores CNN/MLP/resenas, fusion tardia, conversacion actual del chatbot, facts usados y resenas citadas. Esto permite revisar posteriormente el resumen comercial sin depender solo de la pantalla de la demo.
+
 ### Fusion tardia
 
 Puntaje final:
@@ -123,4 +127,5 @@ pnpm approve-builds --all
 - `src/app/scoring.ts`: fusion de scores y reglas de fallback cuando falta una fuente.
 - `src/app/app.ts`: estado de Angular, carga de scores CNN/MLP/resenas y flujo de chatbot.
 - `src/app/app.html`: demo visual y secciones de evidencia.
+- `src/app/models.ts`: contratos de datos para listados, scores y evidencia del chatbot.
 - `scripts/extract_dataset.py`: preparacion auditable del JSON desde el Excel.

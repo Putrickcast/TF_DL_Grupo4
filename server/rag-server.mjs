@@ -41,7 +41,7 @@ const TOPIC_KEYWORDS = {
   ],
   limpieza: ['limpieza', 'limpio', 'limpia', 'impecable', 'ordenado', 'aseado', 'higiene'],
   ubicacion: ['ubicacion', 'ubicación', 'zona', 'barranco', 'malecon', 'malecón', 'cerca', 'cercania', 'cercanía', 'restaurantes', 'tranquilo', 'acceso'],
-  anfitrion: ['anfitrion', 'anfitrión', 'host', 'amable', 'respuesta', 'atento', 'atencion', 'atención', 'comunicacion', 'comunicación', 'rocío', 'rocio'],
+  anfitrion: ['anfitrion', 'anfitrión', 'host', 'amable', 'respuesta', 'respuestas', 'atento', 'atenta', 'atencion', 'atención', 'comunicacion', 'comunicación', 'servicial', 'receptiva', 'resolver', 'duda', 'dudas', 'rapida', 'rápida', 'rocío', 'rocio'],
   comodidad: ['cama', 'comodo', 'cómodo', 'acogedor', 'descansar', 'tranquilo', 'espacio'],
   precio: ['precio', 'calidad', 'valor', 'razonable', 'caro', 'barato', 'recomendado', 'cumple'],
   fotos: ['foto', 'fotos', 'igual', 'publicadas', 'moderno', 'vista', 'vistas'],
@@ -749,9 +749,22 @@ function retrieveEvidence(listing, question, intent) {
 }
 
 function selectUsefulEvidenceForIntent(evidence, question, intent) {
-  const candidates = dedupeNearDuplicateEvidence(evidence)
-    .filter((item) => informativeReviewText(item.review.text))
+  const dedupedEvidence = dedupeNearDuplicateEvidence(evidence)
+    .filter((item) => informativeReviewText(item.review.text));
+  const candidates = dedupedEvidence
     .filter((item) => item.relevance > 0 || reviewMatchesIntent(item.review, question, intent));
+
+  if (intent.asksCommercialDecision) {
+    const byIndex = new Map();
+    for (const category of categoriesForPatternContext(intent)) {
+      directlyRelevantReviews(category, dedupedEvidence).forEach((item) => byIndex.set(item.review.index, item));
+    }
+    const categoryEvidence = [...byIndex.values()];
+    if (categoryEvidence.length > 0) {
+      return categoryEvidence;
+    }
+    return candidates.length > 0 ? candidates : dedupedEvidence;
+  }
 
   if (intent.asksAboutAmenities) {
     const terms = amenityTermsFromIntent(intent);
@@ -786,7 +799,7 @@ function selectUsefulEvidenceForIntent(evidence, question, intent) {
     );
   }
 
-  if (intent.asksAboutComplaints || intent.asksAboutImprovements) {
+  if (!intent.asksCommercialDecision && (intent.asksAboutComplaints || intent.asksAboutImprovements)) {
     return improvementSignalsFromEvidence(candidates);
   }
 
@@ -800,6 +813,42 @@ function selectUsefulEvidenceForIntent(evidence, question, intent) {
   }
 
   return candidates;
+}
+
+function buildCommercialEvidencePool(listing, question, initialEvidence = []) {
+  const relevanceByIndex = new Map(initialEvidence.map((item) => [item.review.index, item.relevance]));
+  const allEvidence = dedupeNearDuplicateEvidence(
+    listing.reviews
+      .filter((review) => informativeReviewText(review.text))
+      .map((review) => ({
+        review: { ...review, excerpt: contextualSnippet(review.text, question) },
+        relevance: relevanceByIndex.get(review.index) ?? 0,
+        selectionSource: relevanceByIndex.has(review.index)
+          ? 'recuperador + cobertura comercial'
+          : 'selección por cobertura comercial',
+      })),
+  );
+  const selected = new Map();
+  const addItems = (items, limit) => {
+    for (const item of items.slice(0, limit)) {
+      selected.set(item.review.index, item);
+    }
+  };
+
+  addItems(directlyRelevantReviews('ubicacion', allEvidence), 3);
+  addItems(directlyRelevantReviews('limpieza', allEvidence), 3);
+  addItems(directlyRelevantReviews('anfitrion', allEvidence), 3);
+  addItems(directlyRelevantReviews('precio', allEvidence), 2);
+  addItems(directlyRelevantReviews('positivo', allEvidence), 3);
+
+  for (const item of allEvidence) {
+    if (selected.size >= 14) {
+      break;
+    }
+    selected.set(item.review.index, item);
+  }
+
+  return [...selected.values()];
 }
 
 function evidenceSnippetTerms(intent, question) {
@@ -873,7 +922,7 @@ function buildIntentInstructions(intent) {
     'Si no hay evidencia suficiente para la intención preguntada, responde exactamente: “No hay evidencia suficiente en la ficha o reseñas recuperadas para afirmarlo con seguridad.”',
   ];
 
-  if (intent.asksAboutImprovements) {
+  if (intent.asksAboutImprovements && !intent.asksCommercialDecision) {
     lines.push(
       'Como la pregunta trata sobre mejoras, quejas, debilidades o problemas, puedes mencionar mejoras solo si aparecen críticas claras en la ficha o reseñas; si no aparecen, indica que no se identifican mejoras específicas con la evidencia disponible.',
     );
@@ -886,7 +935,7 @@ function buildIntentInstructions(intent) {
     );
   }
 
-  if (intent.asksAboutComplaints) {
+  if (intent.asksAboutComplaints && !intent.asksCommercialDecision) {
     lines.push(
       'Como la pregunta trata sobre quejas o problemas, usa principalmente críticas claras en las reseñas. Si hay una crítica aislada, aclara que no parece frecuente. No inventes problemas.',
     );
@@ -894,7 +943,7 @@ function buildIntentInstructions(intent) {
 
   if (intent.asksAboutSentiment) {
     lines.push(
-      'Como la pregunta trata sobre sentimiento, polaridad u opiniones, usa el RESUMEN NLP ENRIQUECIDO para porcentajes, polaridad, emocion predominante y aspectos ABSA; usa las reseÃ±as recuperadas para respaldar esos patrones con evidencia textual.',
+      'Como la pregunta trata sobre sentimiento, polaridad u opiniones, usa el RESUMEN NLP ENRIQUECIDO para porcentajes, polaridad, emoción predominante y aspectos ABSA; usa las reseñas recuperadas para respaldar esos patrones con evidencia textual.',
     );
   }
 
@@ -925,6 +974,15 @@ function buildIntentInstructions(intent) {
   if (intent.asksCommercialDecision) {
     lines.push(
       'Como la pregunta es de conveniencia comercial, puedes integrar ficha y reseñas para resumir fortalezas, riesgos y señales de decisión.',
+    );
+  }
+
+  if (intent.asksCommercialDecision) {
+    lines.push(
+      'Para el resumen comercial, no respondas solo que no hay mejoras: integra fortalezas, riesgos, datos operativos, scores CNN/MLP/reseñas/fusión y una recomendación preliminar.',
+    );
+    lines.push(
+      'Es obligatorio mencionar de forma breve el score CNN visual, el score MLP tabular, el score de reseñas/NLP y el score de fusión tardía cuando el contexto multimodal esté disponible.',
     );
   }
 
@@ -1072,8 +1130,10 @@ const REVIEW_SIGNAL_PATTERNS = {
     { phrase: 'acceso práctico a lo necesario', keywords: ['cerca', 'acceso', 'rodeado', 'necesitabamos', 'necesitábamos'] },
   ],
   anfitrion: [
-    { phrase: 'amabilidad del anfitrión o del equipo', keywords: ['amable', 'amables', 'cordial', 'atento', 'atenta'] },
-    { phrase: 'buena comunicación y respuestas', keywords: ['respuesta', 'respondia', 'respondía', 'comunicacion', 'comunicación'] },
+    { phrase: 'amabilidad del anfitrión o del equipo', keywords: ['amable', 'amables', 'cordial', 'atento', 'atenta', 'servicial', 'receptiva'] },
+    { phrase: 'buena comunicación y respuestas', keywords: ['respuesta', 'respuestas', 'respondia', 'respondía', 'rapida', 'rápida', 'comunicacion', 'comunicación'] },
+    { phrase: 'atención directa del host', keywords: ['atencion', 'atención', 'anfitrion', 'anfitrión', 'host', 'a1'] },
+    { phrase: 'apoyo para resolver dudas o inconvenientes', keywords: ['resolver', 'duda', 'dudas', 'inconveniente', 'inconvenientes', 'presta'] },
     { phrase: 'apoyo durante check-in o estadía', keywords: ['check in', 'check-in', 'facilito', 'facilitó', 'apoyo', 'ayuda'] },
   ],
   precio: [
@@ -1368,6 +1428,10 @@ function focusedExperienceAnswer(intent, facts, evidence) {
 }
 
 function deterministicAnswerForIntent(intent, facts, evidence) {
+  if (intent.asksCommercialDecision) {
+    return null;
+  }
+
   if (intent.asksAboutAmenities && !intent.asksAboutCapacity) {
     return amenityAnswerFromEvidence(facts, evidence, intent);
   }
@@ -1539,13 +1603,190 @@ function buildNlpSummaryLines(reviewSentiment) {
   ].join('\n');
 }
 
-function buildPrompt({ listing, question, facts, evidence, intent, reviewSentiment }) {
+function scoreBandLabel(score) {
+  if (score >= 75) {
+    return 'Alta';
+  }
+  if (score >= 50) {
+    return 'Media';
+  }
+  return 'Baja';
+}
+
+function formatModelScore(item) {
+  if (!item) {
+    return 'no disponible';
+  }
+  const numericScore = Number(item.score);
+  const score = Number.isFinite(numericScore) ? numericScore.toFixed(1) : 's/d';
+  const confidence = Number.isFinite(Number(item.confidence)) ? Number(item.confidence).toFixed(1) : 's/d';
+  const label = item.label ?? (Number.isFinite(numericScore) ? scoreBandLabel(numericScore) : 'sin etiqueta');
+  return `${score}/100 (${label}, confianza ${confidence}%)`;
+}
+
+function buildMultimodalContextLines(multimodalContext) {
+  if (!multimodalContext) {
+    return '- No se recibió contexto multimodal calculado por la interfaz.';
+  }
+
+  const weights = multimodalContext.fusion?.weights ?? {};
+  const weightText = [
+    `Visión ${Math.round(Number(weights.vision ?? 0) * 1000) / 10}%`,
+    `Tabular ${Math.round(Number(weights.tabular ?? 0) * 1000) / 10}%`,
+    `Reseñas ${Math.round(Number(weights.reviews ?? 0) * 1000) / 10}%`,
+  ].join(', ');
+
+  return [
+    `- CNN visual: ${formatModelScore(multimodalContext.vision)}.`,
+    `- MLP tabular: ${formatModelScore(multimodalContext.tabular)}.`,
+    `- Reseñas/NLP: ${formatModelScore(multimodalContext.reviews)}.`,
+    `- Fusión tardía: ${formatModelScore(multimodalContext.fusion)}.`,
+    `- Pesos de fusión: ${weightText}.`,
+  ].join('\n');
+}
+
+function multimodalDecisionPrefix(multimodalContext) {
+  if (!multimodalContext) {
+    return '';
+  }
+
+  return [
+    `Contexto multimodal: CNN visual ${formatModelScore(multimodalContext.vision)}`,
+    `MLP tabular ${formatModelScore(multimodalContext.tabular)}`,
+    `reseñas/NLP ${formatModelScore(multimodalContext.reviews)}`,
+    `fusión tardía ${formatModelScore(multimodalContext.fusion)}.`,
+  ].join('; ');
+}
+
+function scoreValue(item) {
+  return Number.isFinite(Number(item?.score)) ? Number(item.score) : null;
+}
+
+function commercialRecommendation(multimodalContext) {
+  const fusion = multimodalContext?.fusion;
+  const visionScore = scoreValue(multimodalContext?.vision);
+  const fusionScore = scoreValue(fusion);
+
+  if (fusion?.label === 'Recomendado' && (visionScore === null || visionScore >= 50)) {
+    return 'Aceptar';
+  }
+
+  if (fusion?.label === 'No recomendado') {
+    return 'Revisar antes de aceptar';
+  }
+
+  if (visionScore !== null && visionScore < 40) {
+    return 'Aceptar con mejoras visuales';
+  }
+
+  if (fusionScore !== null && fusionScore < 75) {
+    return 'Aceptar con seguimiento';
+  }
+
+  return 'Revisar antes de aceptar';
+}
+
+function commercialSignalLine(category, label, evidence) {
+  const relevant = directlyRelevantReviews(category, evidence);
+  if (relevant.length === 0) {
+    return `- ${label}: sin evidencia textual suficiente.`;
+  }
+
+  const signals = signalSummaryForCategory(category, relevant)
+    .slice(0, 2)
+    .map((signal) => signal.phrase);
+  return `- ${label}: ${signals.length ? joinNatural(signals) : `${relevant.length} reseñas relevantes`}.`;
+}
+
+function commercialHostLine(facts, evidence) {
+  const host = facts.find((fact) => fact.label === 'Host')?.value;
+  const superhost = facts.find((fact) => fact.label === 'Superhost')?.value;
+  const relevant = directlyRelevantReviews('anfitrion', evidence);
+  const signals = signalSummaryForCategory('anfitrion', relevant)
+    .slice(0, 2)
+    .map((signal) => signal.phrase);
+  const factText = [
+    host ? `host ${host}` : null,
+    superhost ? `Superhost: ${superhost}` : null,
+  ].filter(Boolean).join('; ');
+
+  if (signals.length > 0) {
+    return `- Host/atención: ${joinNatural(signals)}${factText ? ` (${factText})` : ''}.`;
+  }
+  if (factText) {
+    return `- Host/atención: ficha disponible (${factText}); sin reseñas específicas en la evidencia usada.`;
+  }
+  return '- Host/atención: sin evidencia textual suficiente.';
+}
+
+function buildCommercialDecisionAnswer({ facts, evidence, reviewSentiment, multimodalContext }) {
+  const recommendation = commercialRecommendation(multimodalContext);
+  const price = facts.find((fact) => fact.label === 'Precio')?.value;
+  const rating = facts.find((fact) => fact.label === 'Rating')?.value;
+  const capacity = facts.find((fact) => fact.label === 'Capacidad')?.value;
+  const visionScore = scoreValue(multimodalContext?.vision);
+
+  const risks = [];
+  if (visionScore !== null && visionScore < 40) {
+    risks.push('La CNN visual marca una alerta: la proporción de fotos por encima de la mediana visual es baja.');
+  }
+  if (improvementSignalsFromEvidence(evidence).length === 0) {
+    risks.push('No aparecen quejas repetidas en las reseñas usadas, pero conviene validar ruido y estado visual antes de escalar la publicación.');
+  }
+  if (risks.length === 0) {
+    risks.push('No se observan riesgos repetidos en la evidencia recuperada; mantener monitoreo de reseñas.');
+  }
+
+  const factsLine = [
+    capacity ? `capacidad ${capacity}` : null,
+    rating ? `rating ${rating}` : null,
+    price ? `precio ${price}` : null,
+  ].filter(Boolean).join('; ');
+  const evidenceCoverage = countLabel(evidence.length, 'reseña revisada', 'reseñas revisadas');
+  const operationalSignals = [
+    factsLine ? `- Ficha comercial: ${factsLine}.` : '- Ficha comercial: revisar campos de capacidad, rating y precio.',
+    commercialSignalLine('precio', 'Precio/valor', evidence),
+    `- Cobertura textual: ${evidenceCoverage} para cubrir limpieza, ubicación, host, precio y experiencia general.`,
+  ];
+
+  return [
+    `Decisión sugerida: ${recommendation}.`,
+    '',
+    'Lectura multimodal:',
+    `- CNN visual: ${formatModelScore(multimodalContext?.vision)}.`,
+    `- MLP tabular: ${formatModelScore(multimodalContext?.tabular)}.`,
+    `- Reseñas/NLP: ${formatModelScore(multimodalContext?.reviews)}.`,
+    `- Fusión tardía: ${formatModelScore(multimodalContext?.fusion)}.`,
+    '',
+    'Fortalezas comerciales:',
+    commercialSignalLine('ubicacion', 'Ubicación', evidence),
+    commercialSignalLine('limpieza', 'Limpieza y cuidado', evidence),
+    commercialHostLine(facts, evidence),
+    reviewSentiment
+      ? `- Percepción textual: ${formatPct(reviewSentiment.positivePct)} positiva y emoción predominante ${reviewSentiment.topEmotion}.`
+      : '- Percepción textual: sin resumen NLP enriquecido disponible.',
+    '',
+    'Riesgos o puntos de revisión:',
+    ...risks.map((risk) => `- ${risk}`),
+    '',
+    'Datos operativos:',
+    ...operationalSignals,
+    '',
+    'Próximo paso:',
+    recommendation === 'Aceptar con mejoras visuales'
+      ? '- Aprobar condicionado a revisar/renovar fotos y volver a calcular el score CNN antes de priorizar la publicación.'
+      : '- Mantener monitoreo de reseñas y validar manualmente cualquier punto no cubierto por la evidencia.',
+  ].join('\n');
+}
+
+function buildPrompt({ listing, question, facts, evidence, intent, reviewSentiment, multimodalContext }) {
   const factLines = facts.map((fact) => `- ${fact.label}: ${fact.value} (${fact.source})`).join('\n');
   const evidenceLines = evidence
     .map((item) => `- Review ${item.review.index}: "${cleanReviewText(item.review.text)}"`)
     .join('\n');
   const patternLines = buildReviewPatternContext(intent, evidence);
   const nlpSummaryLines = buildNlpSummaryLines(reviewSentiment);
+  const multimodalLines = buildMultimodalContextLines(multimodalContext);
   const intentInstructions = buildIntentInstructions(intent);
 
   // The model receives facts, retrieved review text and deterministic NLP aggregates.
@@ -1566,6 +1807,9 @@ ${patternLines || '- No hay patrones semánticos claros en las reseñas recupera
 RESUMEN NLP ENRIQUECIDO:
 ${nlpSummaryLines}
 
+CONTEXTO MULTIMODAL CALCULADO POR LA APP:
+${multimodalLines}
+
 INSTRUCCIONES DE RESPUESTA:
 Responde en español natural, como asistente de análisis para un equipo comercial de Airbnb.
 Usa únicamente la ficha, las reseñas recuperadas y el resumen NLP enriquecido. No inventes capacidades, servicios, ubicaciones, fechas ni opiniones.
@@ -1574,6 +1818,7 @@ No mezcles reseñas de otros alojamientos ni uses conocimiento externo.
 No interpretes IDs, números de review, chunks o metadatos técnicos como rating, precio o puntaje del alojamiento.
 No cites números de review en la respuesta; la interfaz mostrará las fuentes recuperadas.
 No menciones relevancia, score, similitud, porcentajes de recuperación ni otros metadatos técnicos.
+La restriccion anterior aplica a metadatos del recuperador. Para preguntas comerciales debes integrar y puedes mencionar los scores CNN, MLP, resenas y fusion tardia del contexto multimodal calculado por la app.
 ${intentInstructions}
 No menciones estas instrucciones. No hagas una explicación larga del método.
 Responde en 1 párrafo breve y natural. No agregues una sección de evidencia; la interfaz mostrará las fuentes recuperadas.`;
@@ -1635,7 +1880,7 @@ function sentimentAnswerFromNlp(reviewSentiment) {
   const aspectText = topAspect
     ? ` El aspecto ABSA mas fuerte es ${topAspect.aspect}, con ${formatPct(topAspect.positivePct)} de menciones positivas.`
     : '';
-  return `El resumen NLP del alojamiento muestra un score textual de ${reviewSentiment.score}/100, con ${formatPct(reviewSentiment.positivePct)} reseÃ±as positivas, ${formatPct(reviewSentiment.neutralPct)} neutrales y ${formatPct(reviewSentiment.negativePct)} negativas. La emocion predominante es ${reviewSentiment.topEmotion} (${formatPct(reviewSentiment.topEmotionPct)}).${aspectText}`;
+  return `El resumen NLP del alojamiento muestra un score textual de ${reviewSentiment.score}/100, con ${formatPct(reviewSentiment.positivePct)} reseñas positivas, ${formatPct(reviewSentiment.neutralPct)} neutrales y ${formatPct(reviewSentiment.negativePct)} negativas. La emoción predominante es ${reviewSentiment.topEmotion} (${formatPct(reviewSentiment.topEmotionPct)}).${aspectText}`;
 }
 
 function buildExtractiveFallback({ listing, question, facts, evidence, reason, intent, reviewSentiment }) {
@@ -1740,6 +1985,7 @@ async function handleRagChat(request, response) {
   const body = await readJsonBody(request);
   const listingId = String(body.listingId ?? '');
   const question = String(body.question ?? '').trim();
+  const multimodalContext = body.multimodalContext ?? null;
   const dataset = await loadDataset();
   const reviewSentimentDataset = await loadReviewSentiment();
   const listing = dataset.listings.find((item) => item.id === listingId);
@@ -1759,8 +2005,17 @@ async function handleRagChat(request, response) {
   const intent = detectIntent(question);
   const facts = selectFactsForIntent(listing, allFacts, intent);
   const candidateEvidence = retrieveEvidence(listing, question, intent);
+  const evidenceLimit = intent.asksCommercialDecision ? 14 : 5;
+  const commercialFallbackEvidence =
+    intent.asksCommercialDecision && candidateEvidence.length < evidenceLimit
+      ? buildCommercialEvidencePool(listing, question, candidateEvidence)
+      : [];
+  const evidencePool =
+    intent.asksCommercialDecision && commercialFallbackEvidence.length > candidateEvidence.length
+      ? commercialFallbackEvidence
+      : candidateEvidence;
   const usedEvidence = applyUsefulSnippets(
-    selectUsefulEvidenceForIntent(candidateEvidence, question, intent).slice(0, 5),
+    selectUsefulEvidenceForIntent(evidencePool, question, intent).slice(0, evidenceLimit),
     question,
     intent,
   );
@@ -1772,6 +2027,7 @@ async function handleRagChat(request, response) {
     evidence: usedEvidence,
     intent,
     reviewSentiment,
+    multimodalContext,
   });
   logEvent('CHATBOT pregunta', `listing ${listingId}; "${question.slice(0, 140)}"`);
 
@@ -1780,12 +2036,25 @@ async function handleRagChat(request, response) {
     const groundedAnswer =
       deterministicAnswerForIntent(intent, facts, usedEvidence) ??
       sanitizeRagAnswer(answer, intent, facts);
+    const finalAnswer =
+      intent.asksCommercialDecision
+        ? buildCommercialDecisionAnswer({
+            facts,
+            evidence: usedEvidence,
+            reviewSentiment,
+            multimodalContext,
+          })
+        : groundedAnswer;
     logEvent(
       'CHATBOT respuesta',
       `modo ollama-rag; modelo ${OLLAMA_MODEL}; facts ${facts.length}; reseñas usadas ${usedEvidence.length}; candidatas ${candidateEvidence.length}; criterio ${retrievalTopic}`,
     );
+    const note = intent.asksCommercialDecision
+      ? `RAG local: ${countLabel(usedEvidence.length, 'reseña seleccionada', 'reseñas seleccionadas')} para cubrir categorías comerciales.`
+      : `RAG local: ${countLabel(usedEvidence.length, 'reseña usada', 'reseñas usadas')} desde Reviews y ficha de Principal.`;
+
     sendJson(response, 200, {
-      answer: groundedAnswer,
+      answer: finalAnswer,
       facts: facts.slice(0, 4),
       evidence: usedEvidence,
       retrievedEvidence: [],
@@ -1795,22 +2064,31 @@ async function handleRagChat(request, response) {
       mode: 'ollama-rag',
       model: OLLAMA_MODEL,
       retrievalTopic,
-      note: `RAG local: ${countLabel(usedEvidence.length, 'reseña usada', 'reseñas usadas')} de ${candidateEvidence.length} candidatas recuperadas desde Reviews y ficha de Principal.`,
+      note,
     });
     return;
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'error desconocido';
     logEvent('CHATBOT fallback', `listing ${listingId}; razon: ${friendlyOllamaMessage(reason)}`);
-    sendJson(response, 200, {
-      ...buildExtractiveFallback({
-        listing,
-        question,
+    const fallbackPayload = buildExtractiveFallback({
+      listing,
+      question,
+      facts,
+      evidence: usedEvidence,
+      reason,
+      intent,
+      reviewSentiment,
+    });
+    if (intent.asksCommercialDecision) {
+      fallbackPayload.answer = buildCommercialDecisionAnswer({
         facts,
         evidence: usedEvidence,
-        reason,
-        intent,
         reviewSentiment,
-      }),
+        multimodalContext,
+      });
+    }
+    sendJson(response, 200, {
+      ...fallbackPayload,
       retrievalTopic,
     });
   }

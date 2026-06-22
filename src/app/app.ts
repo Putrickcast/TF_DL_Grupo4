@@ -47,6 +47,7 @@ interface DownloadImagesResponse {
 interface ListingPreview {
   listing: Listing;
   tabularScore: number;
+  decisionScore: number;
 }
 
 interface ChatMessage {
@@ -56,6 +57,22 @@ interface ChatMessage {
   result?: ChatResult;
   loading?: boolean;
   error?: string;
+}
+
+interface ExportedChatMessage {
+  role: ChatMessage['role'];
+  text: string;
+  mode?: ChatResult['mode'];
+  model?: string;
+  note?: string;
+  retrievalTopic?: string;
+  facts?: ChatResult['facts'];
+  evidence?: Array<{
+    reviewIndex: number;
+    excerpt: string;
+    relevance: number;
+    selectionSource?: string;
+  }>;
 }
 
 @Component({
@@ -85,6 +102,15 @@ export class App implements OnInit, OnDestroy {
   readonly loading = signal(true);
   readonly loadError = signal('');
   readonly ragModelName = OLLAMA_MODEL_NAME;
+  readonly commercialSummaryQuestion = [
+    'Resume la evidencia textual del listado para una decisión comercial.',
+    'Indica:',
+    '1. fortalezas según ficha y reseñas;',
+    '2. debilidades o riesgos;',
+    '3. señales sobre limpieza, ubicación, ruido, comodidad, host y precio;',
+    '4. integrar los puntajes CNN visual, MLP tabular, reseñas/NLP y fusión tardía;',
+    '5. recomendación textual preliminar: aceptar, aceptar con mejoras o revisar antes de aceptar.',
+  ].join('\n');
 
   private readonly sectionIds: SectionId[] = ['datos', 'modelos', 'chatbot', 'evidencia'];
   private imageLoadSequence = 0;
@@ -288,8 +314,9 @@ export class App implements OnInit, OnDestroy {
       .map((listing) => ({
         listing,
         tabularScore: this.mlpScores()?.listings[listing.id]?.score ?? scoreTabular(listing, this.cohort()).score,
+        decisionScore: this.previewDecisionScore(listing),
       }))
-      .sort((a, b) => b.tabularScore - a.tabularScore);
+      .sort((a, b) => b.decisionScore - a.decisionScore);
   });
 
   async ngOnInit(): Promise<void> {
@@ -324,8 +351,8 @@ export class App implements OnInit, OnDestroy {
       const initialListing =
         [...dataset.listings].sort(
           (a, b) =>
-            (mlpScores.listings[b.id]?.score ?? scoreTabular(b, cohort).score) -
-            (mlpScores.listings[a.id]?.score ?? scoreTabular(a, cohort).score),
+            this.previewDecisionScore(b, cohort, mlpScores, cnnScores, reviewSentiment) -
+            this.previewDecisionScore(a, cohort, mlpScores, cnnScores, reviewSentiment),
         )[0] ?? null;
       this.selectedId.set(initialListing?.id ?? '');
       if (initialListing) {
@@ -386,6 +413,43 @@ export class App implements OnInit, OnDestroy {
     this.filter.set(filter);
   }
 
+  private previewDecisionScore(
+    listing: Listing,
+    cohort = this.cohort(),
+    mlpScores = this.mlpScores(),
+    cnnScores = this.cnnScores(),
+    reviewSentiment = this.reviewSentiment(),
+  ): number {
+    const meta = this.meta();
+    const tabular = mlpScores?.listings[listing.id]
+      ? {
+          score: mlpScores.listings[listing.id].score,
+          confidence: mlpScores.meta.confidence,
+        }
+      : scoreTabular(listing, cohort);
+    const vision = cnnScores?.listings[listing.id]
+      ? {
+          score: cnnScores.listings[listing.id].score,
+          confidence: cnnScores.listings[listing.id].confidence,
+        }
+      : { score: 50, confidence: 15 };
+    const reviews = scoreReviews(listing, reviewSentiment?.listings[listing.id]);
+
+    if (!meta) {
+      return tabular.score;
+    }
+
+    return fuseScores(
+      vision.score,
+      tabular.score,
+      reviews.score,
+      vision.confidence,
+      tabular.confidence,
+      reviews.confidence,
+      meta.fusionWeights,
+    ).score;
+  }
+
   async runQuestion(scrollToAnswer = true): Promise<void> {
     const listing = this.selectedListing();
     if (!listing) {
@@ -437,6 +501,7 @@ export class App implements OnInit, OnDestroy {
         body: JSON.stringify({
           listingId: listing.id,
           question,
+          multimodalContext: this.buildMultimodalContext(),
         }),
       });
 
@@ -485,6 +550,44 @@ export class App implements OnInit, OnDestroy {
     void this.runQuestion(true);
   }
 
+  private buildMultimodalContext() {
+    const vision = this.visionScore();
+    const tabular = this.tabularScore();
+    const reviews = this.reviewScore();
+    const fusion = this.fusion();
+    if (!vision || !tabular || !reviews || !fusion) {
+      return null;
+    }
+
+    return {
+      vision: {
+        score: vision.score,
+        label: vision.label,
+        confidence: vision.confidence,
+        source: 'CNN convnext_tiny sobre fotos del alojamiento',
+      },
+      tabular: {
+        score: tabular.score,
+        label: tabular.label,
+        confidence: tabular.confidence,
+        source: 'MLP tabular entrenado sobre atributos del alojamiento',
+      },
+      reviews: {
+        score: reviews.score,
+        label: reviews.label,
+        confidence: reviews.confidence,
+        source: 'Sentimiento, emociones y ABSA sobre reseñas',
+      },
+      fusion: {
+        score: fusion.score,
+        label: fusion.label,
+        confidence: fusion.confidence,
+        weights: fusion.weights,
+        source: 'Fusión tardía con pesos iguales',
+      },
+    };
+  }
+
   scrollToSection(sectionId: SectionId): void {
     this.activeSection.set(sectionId);
     this.scrollElementBelowTopbar(sectionId);
@@ -513,6 +616,7 @@ export class App implements OnInit, OnDestroy {
       return;
     }
 
+    const conversation = this.exportConversation();
     const payload = {
       generatedAt: new Date().toISOString(),
       listing: {
@@ -523,7 +627,8 @@ export class App implements OnInit, OnDestroy {
       },
       decision: fusion,
       modalityScores: { vision, tabular, reviews },
-      note: 'Export academico de demo. La decision integra CNN visual, MLP tabular, resenas/ABSA y fusion tardia con pesos iguales.',
+      conversation,
+      note: 'Export académico de demo. La decisión integra CNN visual, MLP tabular, reseñas/ABSA, fusión tardía con pesos iguales y conversación RAG del alojamiento seleccionado.',
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -532,6 +637,26 @@ export class App implements OnInit, OnDestroy {
     anchor.download = `decision-${listing.id}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  private exportConversation(): ExportedChatMessage[] {
+    return this.chatMessages()
+      .filter((message) => !message.loading && message.text.trim().length > 0)
+      .map((message) => ({
+        role: message.role,
+        text: message.text,
+        mode: message.result?.mode,
+        model: message.result?.model,
+        note: message.result ? this.evidenceNote(message.result) : undefined,
+        retrievalTopic: message.result?.retrievalTopic,
+        facts: message.result?.facts,
+        evidence: message.result?.evidence.map((item) => ({
+          reviewIndex: item.review.index,
+          excerpt: item.review.excerpt ?? this.shortText(item.review.text, 220),
+          relevance: item.relevance,
+          selectionSource: item.selectionSource,
+        })),
+      }));
   }
 
   scoreClass(score: number): string {
@@ -575,8 +700,7 @@ export class App implements OnInit, OnDestroy {
   }
 
   evidenceNote(chat: ChatResult): string {
-    const retrievedCount = chat.retrievedEvidenceCount ?? chat.retrievedEvidence?.length ?? chat.evidence.length;
-    return chat.note ?? `RAG local: ${this.reviewCountLabel(chat.evidence.length, 'reseña usada', 'reseñas usadas')} de ${retrievedCount} candidatas recuperadas desde Reviews.`;
+    return chat.note ?? `RAG local: ${this.reviewCountLabel(chat.evidence.length, 'reseña usada', 'reseñas usadas')} desde Reviews.`;
   }
 
   private resetChatForListing(contextChanged = false): void {

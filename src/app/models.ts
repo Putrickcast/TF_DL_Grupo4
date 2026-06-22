@@ -231,6 +231,7 @@ export interface FusionResult {
 export interface ChatEvidence {
   review: Review;
   relevance: number;
+  selectionSource?: string;
 }
 
 export interface ChatFact {

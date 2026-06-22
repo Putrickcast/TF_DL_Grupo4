@@ -31,7 +31,11 @@ La interfaz integra los tres modulos exigidos por el trabajo: CNN visual, MLP ta
 
 Si Ollama falla, la app usa fallback extractivo local y lo marca visualmente como `Fallback extractivo`.
 
-Los scores tecnicos del recuperador no se envian a Ollama como parte del contexto semantico. La respuesta del chatbot no debe mencionar `score`, `similitud`, `relevancia` ni porcentajes de recuperacion. Esos valores se muestran solo en la seccion visual de evidencia como `relevancia del recuperador`.
+Los scores tecnicos del recuperador no se envian a Ollama como parte del contexto semantico. La respuesta del chatbot no debe mencionar `score`, `similitud`, `relevancia` ni porcentajes de recuperacion. Esos valores se muestran solo en la seccion visual de evidencia; las resenas del recuperador aparecen como `relevancia del recuperador` y las resenas ampliadas del resumen comercial aparecen como `seleccion por cobertura comercial`.
+
+La interfaz incluye una consulta rapida de `Resumen comercial`, equivalente a la funcion puente del notebook LLM. Esta consulta genera fortalezas, riesgos, datos operativos y una recomendacion textual preliminar para conectar la evidencia del LLM con la decision multimodal. Para esta pregunta comercial, el backend usa una muestra ampliada y balanceada de resenas para cubrir limpieza, ubicacion, host, precio y experiencia general; las resenas agregadas por esta estrategia se muestran como `seleccion por cobertura comercial`.
+
+El boton `Exportar decision + chat JSON` descarga la decision multimodal junto con la conversacion actual del alojamiento seleccionado, incluyendo preguntas, respuestas, modo/modelo, nota RAG, criterio de recuperacion, datos de ficha y resenas citadas. Esto permite auditar posteriormente el resumen comercial y la evidencia textual usada.
 
 ## Modulos Multimodales
 
@@ -131,6 +135,7 @@ La respuesta debe mostrar:
 - Resenas recuperadas como evidencia
 - Nota de recuperacion RAG
 - En la evidencia visual, los porcentajes aparecen etiquetados como `relevancia del recuperador`
+- En el resumen comercial, algunas resenas pueden aparecer como `seleccion por cobertura comercial` cuando se agregan para cubrir categorias de decision y no por ranking directo del recuperador
 
 La respuesta generada no debe incluir metadatos tecnicos como:
 

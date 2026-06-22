@@ -80,7 +80,7 @@
             </span>
             <span class="row-score">
               <strong>S/ {{ item.listing.price | number: '1.0-0' }}</strong>
-              <small>{{ displayScore(item.tabularScore) }}</small>
+              <small>Decisión {{ displayScore(item.decisionScore) }}</small>
             </span>
           </button>
         }
@@ -90,7 +90,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3" />
         </svg>
-        Exportar decisión JSON
+        Exportar decisión + chat JSON
       </button>
     </aside>
 
@@ -374,7 +374,12 @@
                               <blockquote>
                                 "{{ item.review.excerpt ?? shortText(item.review.text, 190) }}"
                                 <footer>
-                                  Review {{ item.review.index }} · relevancia del recuperador {{ item.relevance }}%
+                                  Review {{ item.review.index }} ·
+                                  @if (item.relevance > 0) {
+                                    relevancia del recuperador {{ item.relevance }}%
+                                  } @else {
+                                    {{ item.selectionSource ?? 'selección por cobertura' }}
+                                  }
                                 </footer>
                               </blockquote>
                             }
@@ -429,6 +434,9 @@
                     (click)="askQuickQuestion('¿Para cuántas personas es recomendable este departamento?')"
                   >
                     Capacidad
+                  </button>
+                  <button type="button" (click)="askQuickQuestion(commercialSummaryQuestion)">
+                    Resumen comercial
                   </button>
                 </div>
               </div>
