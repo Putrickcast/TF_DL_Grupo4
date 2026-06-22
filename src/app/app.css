@@ -102,7 +102,6 @@ textarea {
 .listing-row small,
 .decision-card small,
 .score-card footer,
-.dropzone span,
 .assistant-answer strong,
 .empty-state {
   color: #637083;
@@ -128,7 +127,6 @@ textarea {
 
 .search svg,
 .export-button svg,
-.dropzone svg,
 .question-box svg {
   width: 18px;
   height: 18px;
@@ -897,34 +895,6 @@ textarea {
   align-items: start;
   gap: 14px;
   margin-bottom: 14px;
-}
-
-.dropzone {
-  min-height: 172px;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 8px;
-  border: 1px dashed #aebdca;
-  border-radius: 8px;
-  color: #536172;
-  background: #f8fafb;
-  text-align: center;
-  cursor: pointer;
-}
-
-.dropzone input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-}
-
-.dropzone svg {
-  width: 42px;
-  height: 42px;
-  color: #718093;
 }
 
 .image-warning {

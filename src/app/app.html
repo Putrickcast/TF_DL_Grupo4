@@ -237,18 +237,11 @@
           <article class="photo-panel">
             <div class="section-heading">
               <h2>Calidad fotográfica</h2>
-              <p>
-                Fotos reales desde la URL canónica. Puedes subir otras para comparar el score.
-              </p>
+              <p>Fotos reales desde la URL canonica del alojamiento seleccionado.</p>
             </div>
-            <label class="dropzone">
-              <input type="file" accept="image/*" multiple (change)="onImageFiles($event)" />
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 16V4m0 0 4 4m-4-4-4 4M4 17v3h16v-3" />
-              </svg>
-              <strong>Arrastra o selecciona imágenes</strong>
-              <span>Override temporal: se analizan hasta 8 fotos por sesión</span>
-            </label>
+            @if (imageDownloadLoading()) {
+              <p class="image-warning">Descargando y analizando fotos del alojamiento...</p>
+            }
             @if (imageLoadError()) {
               <p class="image-warning">{{ imageLoadError() }}</p>
             }
@@ -263,11 +256,6 @@
                 </figure>
               }
             </div>
-            @if (uploadedImages().length > 0) {
-              <button type="button" class="text-button" (click)="clearUploadedImages()">
-                Volver a fotos reales del anuncio
-              </button>
-            }
           </article>
 
           <article id="chatbot" class="chat-panel">
@@ -353,8 +341,8 @@
                       @if (message.result; as chat) {
                         <details class="message-sources">
                           <summary>
-                            Evidencia usada · {{ chat.facts?.length ?? 0 }} datos ·
-                            {{ chat.evidence.length }} reseñas
+                            Evidencia usada · {{ countLabel(chat.facts?.length ?? 0, 'dato', 'datos') }} ·
+                            {{ reviewCountLabel(chat.evidence.length, 'reseña', 'reseñas') }}
                           </summary>
                           <div class="trace-strip">
                             <span>Modo: {{ chat.mode }}</span>
@@ -392,10 +380,10 @@
                               </blockquote>
                             }
                           </div>
-                          @if ((chat.retrievedEvidence?.length ?? 0) > chat.evidence.length) {
+                          @if ((chat.retrievedEvidence?.length ?? 0) > 0) {
                             <details class="message-sources candidate-sources">
                               <summary>
-                                Reseñas candidatas recuperadas · {{ chat.retrievedEvidence?.length ?? 0 }}
+                                Reseñas recuperadas no usadas para responder · {{ reviewCountLabel(chat.retrievedEvidence?.length ?? 0, 'reseña', 'reseñas') }}
                               </summary>
                               <div class="evidence-list">
                                 @for (item of chat.retrievedEvidence; track item.review.index) {

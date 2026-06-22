@@ -28,7 +28,18 @@ type SectionId = 'datos' | 'modelos' | 'chatbot' | 'evidencia';
 
 const RAG_CHAT_ENDPOINT = '/api/rag-chat';
 const TELEMETRY_ENDPOINT = '/api/telemetry';
+const DOWNLOAD_IMAGES_ENDPOINT = '/api/download-listing-images';
 const OLLAMA_MODEL_NAME = 'llama3.1:8b';
+
+interface DownloadImagesResponse {
+  ok: boolean;
+  listingId: string;
+  imageCount: number;
+  images: string[];
+  sourceUrls: string[];
+  message?: string;
+  manifestEntry?: ImageManifest['listings'][string];
+}
 
 interface ListingPreview {
   listing: Listing;
@@ -64,12 +75,11 @@ export class App implements OnInit, OnDestroy {
   readonly imageManifest = signal<ImageManifest | null>(null);
   readonly listingImages = signal<ImageAnalysis[]>([]);
   readonly imageLoadError = signal('');
-  readonly uploadedImages = signal<ImageAnalysis[]>([]);
+  readonly imageDownloadLoading = signal(false);
   readonly loading = signal(true);
   readonly loadError = signal('');
   readonly ragModelName = OLLAMA_MODEL_NAME;
 
-  private readonly uploadedObjectUrls: string[] = [];
   private readonly sectionIds: SectionId[] = ['datos', 'modelos', 'chatbot', 'evidencia'];
   private imageLoadSequence = 0;
   private chatSequence = 0;
@@ -94,10 +104,7 @@ export class App implements OnInit, OnDestroy {
     return listing ? scoreReviews(listing) : null;
   });
 
-  readonly visionImages = computed(() => {
-    const uploaded = this.uploadedImages();
-    return uploaded.length > 0 ? uploaded : this.listingImages();
-  });
+  readonly visionImages = computed(() => this.listingImages());
 
   readonly visionScore = computed<ModelScore | null>(() => {
     const images = this.visionImages();
@@ -119,22 +126,16 @@ export class App implements OnInit, OnDestroy {
 
     const metrics = averageImageMetrics(images);
     const score = roundOne(images.reduce((sum, image) => sum + image.score, 0) / images.length);
-    const usingUploads = images.some((image) => image.source === 'uploaded');
 
     return {
       score,
-      confidence: usingUploads ? Math.min(95, 62 + images.length * 8) : 55,
+      confidence: 55,
       label: score >= 75 ? 'Alta' : score >= 50 ? 'Media' : 'Baja',
       factors: metrics,
-      notes: usingUploads
-        ? [
-            'Score calculado sobre las imágenes subidas en esta sesión.',
-            'Para entrega final con CNN, usa fotos reales guardadas en img/<ID Airbnb>/ y reserva test real.',
-          ]
-        : [
-            'Score calculado sobre fotos reales descargadas desde la URL canónica del anuncio.',
-            'Estas imágenes están guardadas localmente bajo public/img/<ID Airbnb>/.',
-          ],
+      notes: [
+        'Score calculado sobre fotos reales descargadas desde la URL canónica del anuncio.',
+        'Estas imágenes están guardadas localmente bajo public/img/<ID Airbnb>/.',
+      ],
     };
   });
 
@@ -213,7 +214,6 @@ export class App implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.uploadedObjectUrls.forEach((url) => URL.revokeObjectURL(url));
     if (this.scrollSyncFrame) {
       cancelAnimationFrame(this.scrollSyncFrame);
     }
@@ -350,33 +350,6 @@ export class App implements OnInit, OnDestroy {
     this.scrollElementBelowTopbar(sectionId);
   }
 
-  async onImageFiles(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []).filter((file) => file.type.startsWith('image/'));
-    if (files.length === 0) {
-      return;
-    }
-
-    this.uploadedObjectUrls.forEach((url) => URL.revokeObjectURL(url));
-    this.uploadedObjectUrls.length = 0;
-
-    const analyses = await Promise.all(
-      files.slice(0, 8).map(async (file) => {
-        const url = URL.createObjectURL(file);
-        this.uploadedObjectUrls.push(url);
-        return this.analyzeImageUrl(url, file.name, 'uploaded');
-      }),
-    );
-    this.uploadedImages.set(analyses);
-    input.value = '';
-  }
-
-  clearUploadedImages(): void {
-    this.uploadedObjectUrls.forEach((url) => URL.revokeObjectURL(url));
-    this.uploadedObjectUrls.length = 0;
-    this.uploadedImages.set([]);
-  }
-
   primaryImageFor(listing: Listing): string {
     const image = this.imageManifest()?.listings[listing.id]?.images[0];
     return image ? image : 'images/no-real-photo.svg';
@@ -443,9 +416,17 @@ export class App implements OnInit, OnDestroy {
     return `${chat.evidence.length} reseñas recuperadas`;
   }
 
+  reviewCountLabel(count: number, singular: string, plural: string): string {
+    return `${count} ${count === 1 ? singular : plural}`;
+  }
+
+  countLabel(count: number, singular: string, plural: string): string {
+    return `${count} ${count === 1 ? singular : plural}`;
+  }
+
   evidenceNote(chat: ChatResult): string {
     const retrievedCount = chat.retrievedEvidenceCount ?? chat.retrievedEvidence?.length ?? chat.evidence.length;
-    return chat.note ?? `RAG local: ${chat.evidence.length} reseñas usadas de ${retrievedCount} candidatas recuperadas desde Reviews.`;
+    return chat.note ?? `RAG local: ${this.reviewCountLabel(chat.evidence.length, 'reseña usada', 'reseñas usadas')} de ${retrievedCount} candidatas recuperadas desde Reviews.`;
   }
 
   private resetChatForListing(contextChanged = false): void {
@@ -609,14 +590,32 @@ export class App implements OnInit, OnDestroy {
 
   private async loadListingImages(listing: Listing): Promise<void> {
     const sequence = ++this.imageLoadSequence;
-    const manifestEntry = this.imageManifest()?.listings[listing.id];
-    const imagePaths = manifestEntry?.images ?? [];
     this.imageLoadError.set('');
 
+    let imagePaths = this.imageManifest()?.listings[listing.id]?.images ?? [];
+
     if (imagePaths.length === 0) {
-      this.listingImages.set([]);
-      this.imageLoadError.set('No hay fotos reales descargadas para este listado.');
-      return;
+      this.imageDownloadLoading.set(true);
+      try {
+        await this.ensureListingImages(listing);
+        imagePaths = this.imageManifest()?.listings[listing.id]?.images ?? [];
+      } catch (error) {
+        if (sequence === this.imageLoadSequence) {
+          this.listingImages.set([]);
+          this.imageLoadError.set(
+            error instanceof Error ? error.message : 'No se pudieron descargar las fotos reales',
+          );
+        }
+        return;
+      } finally {
+        this.imageDownloadLoading.set(false);
+      }
+
+      if (imagePaths.length === 0) {
+        this.listingImages.set([]);
+        this.imageLoadError.set('No hay fotos reales descargadas para este listado.');
+        return;
+      }
     }
 
     try {
@@ -636,6 +635,42 @@ export class App implements OnInit, OnDestroy {
         );
       }
     }
+  }
+
+  private async ensureListingImages(listing: Listing): Promise<void> {
+    const response = await fetch(DOWNLOAD_IMAGES_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ listingId: listing.id, maxImages: 8 }),
+    });
+    const payload = (await response.json()) as DownloadImagesResponse;
+
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message ?? `No se pudieron descargar fotos (${response.status})`);
+    }
+
+    const currentManifest = this.imageManifest();
+    this.imageManifest.set({
+      meta: currentManifest?.meta ?? {
+        generatedAt: new Date().toISOString(),
+        source: 'Airbnb canonical public HTML + a0.muscache.com image URLs',
+        method: 'Descarga desde el servidor local de la app.',
+        maxImagesPerListing: 8,
+      },
+      listings: {
+        ...(currentManifest?.listings ?? {}),
+        [listing.id]: payload.manifestEntry ?? {
+          title: listing.title,
+          canonicalUrl: listing.canonicalUrl,
+          status: 'ok',
+          imageCount: payload.imageCount,
+          images: payload.images,
+          sourceUrls: payload.sourceUrls,
+        },
+      },
+    });
+
+    this.emitModelTelemetry('cnn-fotos-descargadas');
   }
 }
 

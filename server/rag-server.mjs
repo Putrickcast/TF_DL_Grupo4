@@ -1,11 +1,16 @@
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { parse as parseUrl } from 'node:url';
 
 const PORT = Number(process.env.RAG_PORT ?? 8787);
 const OLLAMA_HOST = process.env.OLLAMA_HOST ?? 'http://127.0.0.1:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? 'llama3.1:8b';
 const DATASET_PATH = resolve('public/data/listings.json');
+const IMAGE_OUTPUT_ROOT = resolve('public/img');
+const IMAGE_MANIFEST_PATH = resolve('public/data/image-manifest.json');
+const MAX_IMAGES_PER_LISTING = 8;
+const IMAGE_USER_AGENT = 'Mozilla/5.0 (compatible; academic-project-airbnb-photo-fetch/1.0)';
 
 const TOPIC_KEYWORDS = {
   amenidades: [
@@ -125,6 +130,10 @@ function sendOptions(response) {
   response.end();
 }
 
+function countLabel(count, singular, plural) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 async function readJsonBody(request) {
   const chunks = [];
   for await (const chunk of request) {
@@ -174,6 +183,142 @@ function normalizedIncludesTerm(normalizedText, term) {
 
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function normalizeImageUrl(url = '') {
+  return String(url)
+    .replace(/\\u002F/g, '/')
+    .replace(/\\\//g, '/')
+    .replace(/&amp;/g, '&')
+    .trim();
+}
+
+function roomIdFromUrl(url = '') {
+  return /\/rooms\/(\d+)/.exec(url)?.[1] ?? '';
+}
+
+function isPublicAirbnbPhoto(url = '') {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.hostname === 'a0.muscache.com' &&
+      parsed.pathname.includes('/im/pictures/') &&
+      !parsed.pathname.includes('AirbnbPlatformAssets')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function hasHostingMarker(url, listingId) {
+  return Boolean(listingId) && url.includes(`Hosting-${listingId}`);
+}
+
+function uniquePhotoUrls(urls) {
+  const seen = new Set();
+  const result = [];
+  for (const url of urls) {
+    try {
+      const key = new URL(url).pathname;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      result.push(url);
+    } catch {
+      // Ignore malformed candidates.
+    }
+  }
+  return result;
+}
+
+function extractListingImageUrls(htmlText, listingId, canonicalUrl) {
+  const candidates = [];
+  const patterns = [
+    /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)/g,
+    /"picture_url"\s*:\s*"([^"]+)"/g,
+    /"baseUrl"\s*:\s*"(https:\/\/a0\.muscache\.com\/[^"]+)"/g,
+    /(https:\/\/a0\.muscache\.com\/im\/pictures\/[^"\\<>\s]+)/g,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of htmlText.matchAll(pattern)) {
+      const url = normalizeImageUrl(match[1]);
+      if (isPublicAirbnbPhoto(url) && !candidates.includes(url)) {
+        candidates.push(url);
+      }
+    }
+  }
+
+  const roomId = roomIdFromUrl(canonicalUrl);
+  const strictMatches = candidates.filter(
+    (url) => hasHostingMarker(url, listingId) || hasHostingMarker(url, roomId),
+  );
+
+  return uniquePhotoUrls(strictMatches.length > 0 ? strictMatches : candidates);
+}
+
+function imageExtensionFor(url, contentType = '') {
+  const lowerContentType = contentType.toLowerCase();
+  if (lowerContentType.includes('webp')) {
+    return '.webp';
+  }
+  const pathname = parseUrl(url).pathname?.toLowerCase() ?? '';
+  if (pathname.endsWith('.png')) {
+    return '.png';
+  }
+  if (pathname.endsWith('.webp')) {
+    return '.webp';
+  }
+  return '.jpg';
+}
+
+async function fetchText(url) {
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': IMAGE_USER_AGENT,
+      Accept: 'text/html,application/xhtml+xml',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Airbnb ${response.status}: ${response.statusText}`);
+  }
+  return response.text();
+}
+
+async function downloadImage(url, outPathWithoutExtension) {
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': IMAGE_USER_AGENT,
+      Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Imagen ${response.status}: ${response.statusText}`);
+  }
+  const contentType = response.headers.get('content-type') ?? '';
+  const extension = imageExtensionFor(url, contentType);
+  const outPath = `${outPathWithoutExtension}${extension}`;
+  const bytes = Buffer.from(await response.arrayBuffer());
+  await writeFile(outPath, bytes);
+  return outPath;
+}
+
+async function loadImageManifest() {
+  try {
+    return JSON.parse(await readFile(IMAGE_MANIFEST_PATH, 'utf8'));
+  } catch {
+    return {
+      meta: {
+        generatedAt: new Date().toISOString(),
+        source: 'Airbnb canonical public HTML + a0.muscache.com image URLs',
+        method:
+          'Fetch canonical page, extract public listing image URLs from HTML, save locally under public/img/<ID Airbnb>/.',
+        maxImagesPerListing: MAX_IMAGES_PER_LISTING,
+      },
+      listings: {},
+    };
+  }
 }
 
 function expandedQuestionTokens(question) {
@@ -344,6 +489,38 @@ function contextualSnippet(text, question, max = 210) {
     .sort((a, b) => a.index - b.index);
   const firstHit = tokenPositions[0]?.index ?? 0;
   const start = Math.max(0, firstHit - Math.floor(max * 0.25));
+  const end = Math.min(clean.length, start + max);
+  const excerpt = clean.slice(start, end).trim();
+  return `${start > 0 ? '...' : ''}${excerpt}${end < clean.length ? '...' : ''}`;
+}
+
+function snippetAroundTerms(text, terms, max = 190) {
+  const clean = cleanReviewText(text);
+  if (!clean) {
+    return '';
+  }
+
+  const normalizedClean = normalize(clean);
+  const normalizedTerms = unique(terms.map((term) => normalize(term)).filter(Boolean));
+  const hit = normalizedTerms
+    .map((term) => ({ term, index: findOriginalIndex(clean, term) }))
+    .filter((item) => item.index >= 0)
+    .sort((a, b) => a.index - b.index)[0];
+
+  if (!hit) {
+    return clean.length <= max ? clean : `${clean.slice(0, max).trim()}...`;
+  }
+
+  const sentences = clean
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const sentence = sentences.find((item) => normalizedTerms.some((term) => normalizedIncludesTerm(normalize(item), term)));
+  if (sentence && sentence.length <= max) {
+    return sentence;
+  }
+
+  const start = Math.max(0, hit.index - Math.floor(max * 0.35));
   const end = Math.min(clean.length, start + max);
   const excerpt = clean.slice(start, end).trim();
   return `${start > 0 ? '...' : ''}${excerpt}${end < clean.length ? '...' : ''}`;
@@ -564,7 +741,11 @@ function selectUsefulEvidenceForIntent(evidence, question, intent) {
       'grupo',
       'huesped',
       'huésped',
+      'huespedes',
+      'huéspedes',
       'persona',
+      'personas',
+      'dos personas',
       'comodo',
       'cómodo',
       'acogedor',
@@ -593,6 +774,43 @@ function selectUsefulEvidenceForIntent(evidence, question, intent) {
   }
 
   return candidates;
+}
+
+function evidenceSnippetTerms(intent, question) {
+  if (intent.asksAboutAmenities) {
+    return amenityTermsFromIntent(intent);
+  }
+
+  const terms = [];
+  const snippetCategories = intent.categories.filter((category) => REVIEW_SIGNAL_PATTERNS[category] && category !== 'experiencia');
+  const categories = snippetCategories.length > 0 ? snippetCategories : categoriesForPatternContext(intent);
+  for (const category of categories) {
+    (TOPIC_KEYWORDS[category] ?? []).forEach((keyword) => terms.push(keyword));
+    (REVIEW_SIGNAL_PATTERNS[category] ?? []).forEach((pattern) => {
+      pattern.keywords.forEach((keyword) => terms.push(keyword));
+    });
+  }
+
+  if (intent.asksAboutCapacity && !intent.asksAboutImprovements) {
+    terms.push('persona', 'personas', 'pareja', 'familia', 'grupo', 'huesped', 'huésped', 'cama', 'estadia', 'estadía', 'estancia');
+  }
+
+  if (terms.length > 0) {
+    return unique(terms);
+  }
+
+  return unique(expandedQuestionTokens(question).filter((token) => token.length > 3 && !QUERY_STOP_WORDS.has(token)));
+}
+
+function applyUsefulSnippets(evidence, question, intent) {
+  const terms = evidenceSnippetTerms(intent, question);
+  return evidence.map((item) => ({
+    ...item,
+    review: {
+      ...item.review,
+      excerpt: snippetAroundTerms(item.review.text, terms, 190),
+    },
+  }));
 }
 
 function inferRetrievalTopic(question) {
@@ -678,7 +896,8 @@ function buildIntentInstructions(intent) {
 }
 
 function capacitySignalsFromEvidence(evidence) {
-  const signals = [];
+  const specificSignals = [];
+  const generalSignals = [];
   const seen = new Set();
 
   for (const item of evidence) {
@@ -687,7 +906,13 @@ function capacitySignalsFromEvidence(evidence) {
     const add = (key, phrase) => {
       if (!seen.has(key)) {
         seen.add(key);
-        signals.push(phrase);
+        specificSignals.push(phrase);
+      }
+    };
+    const addGeneral = (key, phrase) => {
+      if (!seen.has(key)) {
+        seen.add(key);
+        generalSignals.push(phrase);
       }
     };
 
@@ -698,17 +923,17 @@ function capacitySignalsFromEvidence(evidence) {
       add('familia-grupo', 'con menciones compatibles con familias o grupos');
     }
     if (normalized.includes('equipado') || normalized.includes('preparado') || normalized.includes('todo lo necesario')) {
-      add('equipado', 'bien equipado o preparado para la estadía');
+      addGeneral('equipado', 'bien equipado');
     }
     if (normalized.includes('comodo') || normalized.includes('comodidad') || normalized.includes('acogedor')) {
-      add('comodidad', 'percibido como cómodo o acogedor');
+      addGeneral('comodidad', 'cómodo o acogedor');
     }
     if (normalized.includes('estadia') || normalized.includes('estancia') || normalized.includes('largo plazo') || normalized.includes('mediana')) {
-      add('estadia', 'adecuado para una estadía cómoda');
+      addGeneral('estadia', 'apto para una buena estadía');
     }
   }
 
-  return signals;
+  return { specificSignals, generalSignals };
 }
 
 function capacityAnswerFromFacts(facts, evidence = []) {
@@ -722,10 +947,12 @@ function capacityAnswerFromFacts(facts, evidence = []) {
     return 'La ficha del anuncio no muestra datos suficientes de capacidad, habitaciones, camas o baños para responder con precisión.';
   }
 
-  const signals = capacitySignalsFromEvidence(evidence);
-  const reviewSentence = signals.length > 0
-    ? ` Las reseñas recuperadas complementan esa ficha y sugieren que puede ser ${signals.slice(0, 3).join(', ')}.`
-    : ' Las reseñas recuperadas no agregan evidencia clara sobre un perfil específico de huésped.';
+  const { specificSignals, generalSignals } = capacitySignalsFromEvidence(evidence);
+  const reviewSentence = specificSignals.length > 0
+    ? ` Las reseñas complementan esa ficha con señales de uso: ${specificSignals.slice(0, 3).join(', ')}.`
+    : generalSignals.length > 0
+      ? ` Las reseñas refuerzan que el espacio es ${generalSignals.slice(0, 2).join(' y ')}, pero no precisan un número ideal de huéspedes.`
+      : ' Las reseñas recuperadas no agregan evidencia clara sobre un perfil específico de huésped.';
 
   return `Según la ficha del anuncio, el alojamiento tiene ${parts.join(', ')}.${reviewSentence}`;
 }
@@ -843,6 +1070,26 @@ function signalSummaryForCategory(category, evidence) {
   return signals;
 }
 
+function signalPhrasesForCategory(category, evidence) {
+  return signalSummaryForCategory(category, evidence).slice(0, 4).map((signal) => signal.phrase);
+}
+
+function hasSignalPhrase(signalPhrases, text) {
+  const normalizedText = normalize(text);
+  return signalPhrases.some((phrase) => normalize(phrase).includes(normalizedText));
+}
+
+function joinNatural(items) {
+  const values = items.filter(Boolean);
+  if (values.length <= 1) {
+    return values[0] ?? '';
+  }
+  if (values.length === 2) {
+    return `${values[0]} y ${values[1]}`;
+  }
+  return `${values.slice(0, -1).join(', ')} y ${values.at(-1)}`;
+}
+
 function directlyRelevantReviews(category, evidence) {
   const topicMatches = topicEvidence(category, evidence);
   const signalPatterns = REVIEW_SIGNAL_PATTERNS[category] ?? [];
@@ -864,10 +1111,56 @@ function buildPatternSentence({ label, category, evidence, fallbackFact }) {
 
   const signals = signalSummaryForCategory(category, relevant);
   if (signals.length > 0) {
-    const signalText = signals.slice(0, 4).map((signal) => signal.phrase).join(', ');
-    const prefix = relevant.length > 1 ? `${label}, varias reseñas destacan` : `${label}, la reseña recuperada destaca`;
+    const signalPhrases = signals.slice(0, 4).map((signal) => signal.phrase);
     const limitNote = relevant.length === 1 ? ' La evidencia textual es limitada a una reseña.' : '';
-    return `${prefix} ${signalText}.${limitNote}`;
+    if (category === 'limpieza') {
+      const details = [];
+      if (hasSignalPhrase(signalPhrases, 'limpieza')) {
+        details.push('lo describen como muy limpio');
+      }
+      if (hasSignalPhrase(signalPhrases, 'orden')) {
+        details.push('también resaltan el orden y cuidado del espacio');
+      }
+      if (hasSignalPhrase(signalPhrases, 'agradable')) {
+        details.push('mencionan una sensación agradable al llegar');
+      }
+      return `Los huéspedes hablan muy bien de la limpieza: ${joinNatural(details.length ? details : ['las reseñas usadas apuntan a un espacio limpio y bien cuidado'])}.${limitNote}`;
+    }
+    if (category === 'ubicacion') {
+      const details = [];
+      if (hasSignalPhrase(signalPhrases, 'ubicación')) {
+        details.push('una ubicación céntrica o conveniente');
+      }
+      if (hasSignalPhrase(signalPhrases, 'restaurantes')) {
+        details.push('cercanía a restaurantes, cafeterías o servicios');
+      }
+      if (hasSignalPhrase(signalPhrases, 'Barranco')) {
+        details.push('Barranco como un entorno atractivo');
+      }
+      if (hasSignalPhrase(signalPhrases, 'acceso')) {
+        details.push('acceso práctico a lo necesario');
+      }
+      return `La ubicación aparece como una fortaleza clara: las reseñas destacan ${joinNatural(details.length ? details : signalPhrases)}.${limitNote}`;
+    }
+    if (category === 'anfitrion') {
+      const details = [];
+      if (hasSignalPhrase(signalPhrases, 'comunicación')) {
+        details.push('respuestas rápidas con buena comunicación');
+      }
+      if (hasSignalPhrase(signalPhrases, 'amabilidad')) {
+        details.push('trato amable del anfitrión o del equipo');
+      }
+      if (hasSignalPhrase(signalPhrases, 'check')) {
+        details.push('apoyo durante el check-in o la estadía');
+      }
+      return `Las reseñas valoran muy bien la atención: ${joinNatural(details.length ? details : signalPhrases)}.${limitNote}`;
+    }
+    if (category === 'positivo') {
+      return `Los aspectos positivos más repetidos son ${joinNatural(signalPhrases)}.${limitNote}`;
+    }
+
+    const prefix = relevant.length > 1 ? `${label}, varias reseñas destacan` : `${label}, la reseña recuperada destaca`;
+    return `${prefix} ${joinNatural(signalPhrases)}.${limitNote}`;
   }
 
   const snippets = relevant.slice(0, 2).map((item) => `"${item.review.excerpt ?? contextualSnippet(item.review.text, '', 170)}"`);
@@ -927,6 +1220,46 @@ function amenityTermsFromIntent(intent) {
   return [...terms];
 }
 
+function serviceEvidenceName(serviceName) {
+  const normalizedName = normalize(serviceName);
+  if (normalizedName.includes('wifi') || normalizedName.includes('internet')) {
+    return 'del wifi';
+  }
+  if (normalizedName.includes('piscina')) {
+    return 'de la piscina';
+  }
+  if (normalizedName.includes('cocina')) {
+    return 'de la cocina';
+  }
+  if (normalizedName.includes('lavadora') || normalizedName.includes('secadora')) {
+    return 'de la lavandería';
+  }
+  return `de ${serviceName}`;
+}
+
+function amenityReviewInsight(serviceName, relevantReviews, terms) {
+  if (relevantReviews.length === 0) {
+    return `No encontré reseñas recuperadas que evalúen específicamente la calidad o experiencia ${serviceEvidenceName(serviceName)}.`;
+  }
+
+  const normalizedTerms = terms.map((term) => normalize(term));
+  const reviewTexts = relevantReviews.map((item) => normalize(item.review.text)).join(' ');
+  if (normalizedTerms.some((term) => term.includes('piscina') || term.includes('pool'))) {
+    if (reviewTexts.includes('disfrutar')) {
+      return 'Además, una reseña menciona que les hubiera gustado tener más tiempo para disfrutar la piscina y otros servicios.';
+    }
+    return 'Además, las reseñas usadas mencionan la piscina como parte de la experiencia del alojamiento.';
+  }
+  if (normalizedTerms.some((term) => term.includes('cowork') || term.includes('gimnasio') || term.includes('gym'))) {
+    return 'Además, las reseñas usadas mencionan servicios del edificio o espacios relacionados con esa experiencia.';
+  }
+  if (normalizedTerms.some((term) => term.includes('wifi') || term.includes('internet'))) {
+    return 'Además, las reseñas usadas mencionan conectividad o condiciones para trabajar, aunque conviene revisar si hablan de calidad o estabilidad.';
+  }
+
+  return `Además, ${relevantReviews.length > 1 ? 'varias reseñas usadas mencionan' : 'una reseña usada menciona'} ese servicio dentro de la experiencia del huésped.`;
+}
+
 function amenityAnswerFromEvidence(facts, evidence, intent) {
   const terms = amenityTermsFromIntent(intent);
   const relevantFacts = facts.filter((fact) =>
@@ -949,17 +1282,12 @@ function amenityAnswerFromEvidence(facts, evidence, intent) {
 
   const serviceName = amenityNames.length > 0 ? amenityNames.join(' o ') : 'ese servicio';
   const directAnswer = relevantFacts.length > 0 || relevantReviews.length > 0
-    ? `Sí, hay evidencia sobre ${serviceName}.`
+    ? 'Sí.'
     : 'No hay evidencia suficiente en la ficha o reseñas recuperadas para afirmarlo con seguridad.';
   const factSentence = relevantFacts.length > 0
-    ? `La ficha del anuncio lo menciona en ${unique(relevantFacts.map((fact) => fact.label.toLowerCase())).join(', ')}.`
+    ? `La ficha del anuncio menciona ${serviceName} en ${unique(relevantFacts.map((fact) => fact.label.toLowerCase())).join(', ')}.`
     : 'La ficha recuperada no lo menciona explícitamente.';
-  const reviewSignals = signalSummaryForCategory('amenidades', relevantReviews)
-    .filter((signal) => terms.some((term) => normalize(signal.phrase).includes(normalize(term))))
-    .map((signal) => signal.phrase);
-  const reviewSentence = relevantReviews.length > 0
-    ? ` En reseñas, ${relevantReviews.length > 1 ? 'varios huéspedes mencionan' : 'un huésped menciona'} experiencia relacionada${reviewSignals.length > 0 ? `: ${unique(reviewSignals).slice(0, 3).join(', ')}` : ''}.`
-    : ` No encontré comentarios específicos sobre la calidad de ${serviceName} en las reseñas recuperadas.`;
+  const reviewSentence = ` ${amenityReviewInsight(serviceName, relevantReviews, terms)}`;
 
   return `${directAnswer} ${factSentence}${reviewSentence}`;
 }
@@ -1041,13 +1369,45 @@ function shortFactText(text, max = 260) {
   return `${clean.slice(0, max).trim()}...`;
 }
 
+function amenityFactText(descriptionSource, intent) {
+  const terms = amenityTermsFromIntent(intent);
+  const presentTerms = unique(terms.filter((term) => normalizedIncludesTerm(normalize(descriptionSource), term)));
+  if (presentTerms.length > 0) {
+    return `Incluye ${presentTerms.slice(0, 4).join(', ')}.`;
+  }
+
+  const snippet = snippetAroundTerms(descriptionSource, terms, 170);
+  return snippet || shortFactText(descriptionSource, 170);
+}
+
+function locationFactText(listing, descriptionSource) {
+  const parts = [];
+  if (listing.district) {
+    parts.push(`Alojamiento ubicado en ${listing.district}.`);
+  }
+
+  const locationSnippet = snippetAroundTerms(
+    descriptionSource,
+    ['ubicacion', 'ubicación', 'cerca', 'zona', 'restaurante', 'restaurantes', 'cafeteria', 'cafetería', 'malecon', 'malecón', 'miraflores'],
+    150,
+  );
+  const normalizedSnippet = normalize(locationSnippet);
+  const hasLocationDetail = ['cerca', 'zona', 'restaurante', 'cafeteria', 'malecon', 'miraflores']
+    .some((term) => normalizedIncludesTerm(normalizedSnippet, term));
+  if (locationSnippet && hasLocationDetail) {
+    parts.push(locationSnippet);
+  }
+
+  return unique(parts).join(' ');
+}
+
 function selectFactsForIntent(listing, allFacts, intent) {
   const labels = new Set();
   const addLabels = (values) => values.forEach((value) => labels.add(value));
 
   for (const category of intent.categories) {
     if (category === 'amenidades') {
-      addLabels(['Amenidades', 'Reconocimiento']);
+      addLabels(['Reconocimiento']);
     }
     if (category === 'capacidad') {
       addLabels(['Capacidad', 'Habitaciones', 'Camas', 'Baños']);
@@ -1062,7 +1422,7 @@ function selectFactsForIntent(listing, allFacts, intent) {
       addLabels(['Host', 'Superhost', 'Tiempo como host']);
     }
     if (category === 'remoto') {
-      addLabels(['Amenidades', 'Reconocimiento']);
+      addLabels(['Reconocimiento']);
     }
     if (category === 'fotos') {
       addLabels(['Rating']);
@@ -1075,7 +1435,16 @@ function selectFactsForIntent(listing, allFacts, intent) {
     }
   }
 
-  const selected = allFacts.filter((fact) => labels.has(fact.label));
+  const selected = allFacts.filter((fact) => {
+    if (!labels.has(fact.label)) {
+      return false;
+    }
+    if (intent.asksAboutAmenities) {
+      const terms = amenityTermsFromIntent(intent);
+      return terms.some((term) => normalizedIncludesTerm(normalize(fact.value), term));
+    }
+    return true;
+  });
   const descriptionSource = [listing.description, listing.summary].filter(Boolean).join(' ');
   const shouldIncludeDescription =
     descriptionSource &&
@@ -1087,11 +1456,18 @@ function selectFactsForIntent(listing, allFacts, intent) {
       hasIntentText(descriptionSource, intent));
 
   if (shouldIncludeDescription) {
-    selected.push({
-      label: 'Descripción objetiva',
-      value: shortFactText(descriptionSource),
-      source: 'Hoja Principal',
-    });
+    const descriptionValue = intent.asksAboutAmenities
+      ? amenityFactText(descriptionSource, intent)
+      : intent.categories.includes('ubicacion')
+        ? locationFactText(listing, descriptionSource)
+        : shortFactText(descriptionSource);
+    if (descriptionValue) {
+      selected.push({
+        label: 'Descripción objetiva',
+        value: descriptionValue,
+        source: 'Hoja Principal',
+      });
+    }
   }
 
   return selected;
@@ -1202,7 +1578,7 @@ function buildExtractiveFallback({ listing, question, facts, evidence, reason })
     answer,
     facts: facts.slice(0, 4),
     evidence: strongest.length > 0 ? strongest : evidence.slice(0, 5),
-    retrievedEvidence: evidence.slice(0, 5),
+    retrievedEvidence: [],
     evidenceScope: strongest.length > 0 ? 'citadas' : 'recuperadas',
     citedEvidenceCount: strongest.length,
     retrievedEvidenceCount: evidence.length,
@@ -1296,7 +1672,11 @@ async function handleRagChat(request, response) {
   const intent = detectIntent(question);
   const facts = selectFactsForIntent(listing, allFacts, intent);
   const candidateEvidence = retrieveEvidence(listing, question, intent);
-  const usedEvidence = selectUsefulEvidenceForIntent(candidateEvidence, question, intent).slice(0, 5);
+  const usedEvidence = applyUsefulSnippets(
+    selectUsefulEvidenceForIntent(candidateEvidence, question, intent).slice(0, 5),
+    question,
+    intent,
+  );
   const retrievalTopic = inferRetrievalTopic(question);
   const prompt = buildPrompt({ listing, question, facts, evidence: usedEvidence, intent });
   logEvent('CHATBOT pregunta', `listing ${listingId}; "${question.slice(0, 140)}"`);
@@ -1310,18 +1690,22 @@ async function handleRagChat(request, response) {
       'CHATBOT respuesta',
       `modo ollama-rag; modelo ${OLLAMA_MODEL}; facts ${facts.length}; reseñas usadas ${usedEvidence.length}; candidatas ${candidateEvidence.length}; criterio ${retrievalTopic}`,
     );
+    const usedReviewIds = new Set(usedEvidence.map((item) => item.review.index));
+    const unusedCandidateEvidence = usedEvidence.length > 0
+      ? candidateEvidence.filter((item) => !usedReviewIds.has(item.review.index)).slice(0, 5)
+      : [];
     sendJson(response, 200, {
       answer: groundedAnswer,
       facts: facts.slice(0, 4),
       evidence: usedEvidence,
-      retrievedEvidence: candidateEvidence.slice(0, 5),
+      retrievedEvidence: unusedCandidateEvidence,
       evidenceScope: 'citadas',
       citedEvidenceCount: usedEvidence.length,
       retrievedEvidenceCount: candidateEvidence.length,
       mode: 'ollama-rag',
       model: OLLAMA_MODEL,
       retrievalTopic,
-      note: `RAG local: ${usedEvidence.length} reseñas usadas de ${candidateEvidence.length} candidatas recuperadas desde Reviews y ficha de Principal.`,
+      note: `RAG local: ${countLabel(usedEvidence.length, 'reseña usada', 'reseñas usadas')} de ${candidateEvidence.length} candidatas recuperadas desde Reviews y ficha de Principal.`,
     });
     return;
   } catch (error) {
@@ -1332,6 +1716,84 @@ async function handleRagChat(request, response) {
       retrievalTopic,
     });
   }
+}
+
+async function handleDownloadListingImages(request, response) {
+  const body = await readJsonBody(request);
+  const listingId = String(body.listingId ?? '');
+  const maxImages = Math.max(
+    1,
+    Math.min(Number(body.maxImages ?? MAX_IMAGES_PER_LISTING), MAX_IMAGES_PER_LISTING),
+  );
+  const dataset = await loadDataset();
+  const listing = dataset.listings.find((item) => item.id === listingId);
+
+  if (!listing) {
+    sendJson(response, 404, { error: `No existe el listing ${listingId}` });
+    return;
+  }
+
+  if (!listing.canonicalUrl) {
+    sendJson(response, 400, { error: 'El anuncio no tiene URL canonica.' });
+    return;
+  }
+
+  const listingDir = resolve(IMAGE_OUTPUT_ROOT, listingId);
+  await mkdir(listingDir, { recursive: true });
+
+  const html = await fetchText(listing.canonicalUrl);
+  const sourceUrls = extractListingImageUrls(html, listingId, listing.canonicalUrl).slice(
+    0,
+    maxImages,
+  );
+
+  if (sourceUrls.length === 0) {
+    sendJson(response, 200, {
+      ok: false,
+      listingId,
+      imageCount: 0,
+      images: [],
+      sourceUrls: [],
+      message: 'No se encontraron fotos publicas en el HTML canonico del anuncio.',
+    });
+    return;
+  }
+
+  const images = [];
+  for (const [index, imageUrl] of sourceUrls.entries()) {
+    const outPath = await downloadImage(imageUrl, resolve(listingDir, `photo-${index + 1}`));
+    images.push(outPath.replace(resolve('public'), '').replace(/^[/\\]/, '').replace(/\\/g, '/'));
+  }
+
+  const manifest = await loadImageManifest();
+  manifest.meta = {
+    generatedAt: new Date().toISOString(),
+    source: 'Airbnb canonical public HTML + a0.muscache.com image URLs',
+    method:
+      'Fetch canonical page, extract public listing image URLs from HTML, save locally under public/img/<ID Airbnb>/.',
+    maxImagesPerListing: MAX_IMAGES_PER_LISTING,
+  };
+  manifest.listings = manifest.listings ?? {};
+  manifest.listings[listingId] = {
+    title: listing.title,
+    canonicalUrl: listing.canonicalUrl,
+    status: 'ok',
+    imageCount: images.length,
+    images,
+    sourceUrls,
+  };
+
+  await writeFile(IMAGE_MANIFEST_PATH, JSON.stringify(manifest, null, 2), 'utf8');
+  logEvent('CNN fotos', `listing ${listingId}; descargadas ${images.length}`);
+
+  sendJson(response, 200, {
+    ok: true,
+    listingId,
+    imageCount: images.length,
+    images,
+    sourceUrls,
+    manifestEntry: manifest.listings[listingId],
+  });
 }
 
 const server = createServer(async (request, response) => {
@@ -1353,6 +1815,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === 'POST' && request.url === '/api/rag-chat') {
       await handleRagChat(request, response);
+      return;
+    }
+
+    if (request.method === 'POST' && request.url === '/api/download-listing-images') {
+      await handleDownloadListingImages(request, response);
       return;
     }
 
