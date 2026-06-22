@@ -1,0 +1,33 @@
+﻿listing_id,pregunta,criterio,respuesta,modo,modelo,n_datos_ficha,n_reseñas_usadas,n_reseñas_recuperador_inicial,usa_contexto_multimodal,respuesta_suficiente,sin_score_tecnico_recuperador,error_ollama
+1207414356654599414,¿Qué dicen sobre la limpieza del departamento?,limpieza,"Los huéspedes hablan positivamente de la limpieza: mencionan un departamento muy limpio, ordenado y bien cuidado.",ollama-rag,llama3.1:8b,0,5,5,True,True,True,
+1207414356654599414,¿Qué opinan sobre la ubicación y los restaurantes cercanos?,"experiencia, ubicacion","La ubicación aparece como una fortaleza: las reseñas mencionan Barranco, cercanía a restaurantes o servicios, y una zona céntrica o conveniente.",ollama-rag,llama3.1:8b,2,5,5,True,True,True,
+1207414356654599414,¿Cómo describen al anfitrión y su atención?,anfitrion,"Las reseñas valoran positivamente la atención, especialmente la comunicación rápida, amabilidad y disposición para ayudar. Además, la ficha identifica al host como Diana Rosa y Superhost: Sí.",ollama-rag,llama3.1:8b,3,5,5,True,True,True,
+1207414356654599414,¿Para cuántas personas es recomendable este departamento?,capacidad,"Según la ficha del anuncio, el alojamiento tiene capacidad: 4 huéspedes, habitaciones: 1 habitación, camas: 2 camas, baños: 1 baño. Las reseñas refuerzan comodidad o buen equipamiento, pero no precisan un número ideal de huéspedes.",ollama-rag,llama3.1:8b,4,4,5,True,True,True,
+1207414356654599414,¿Tiene WI FI este departamento?,"amenidades, remoto",No hay evidencia suficiente en la ficha o reseñas recuperadas para afirmarlo con seguridad.,ollama-rag,llama3.1:8b,1,0,0,True,True,True,
+1207414356654599414,¿Tiene piscina este departamento?,amenidades,"Sí. La evidencia recuperada menciona piscina. La ficha del anuncio lo incluye en la descripción objetiva. Además, las reseñas usadas mencionan esa amenidad o una experiencia relacionada.",ollama-rag,llama3.1:8b,1,3,3,True,True,True,
+1207414356654599414,¿Hay quejas frecuentes en las reseñas?,quejas,No hay evidencia suficiente de quejas frecuentes en las reseñas recuperadas.,ollama-rag,llama3.1:8b,0,0,5,True,True,True,
+1207414356654599414,¿Qué debería mejorar el host?,"anfitrion, mejoras",Con la evidencia disponible no se identifican mejoras específicas; las reseñas usadas no muestran críticas claras o problemas frecuentes.,ollama-rag,llama3.1:8b,3,0,5,True,True,True,
+1207414356654599414,"Resume la evidencia textual del listado para una decisión comercial e integra CNN, MLP, reseñas/NLP y fusión tardía.",comercial,"Decisión sugerida: Aceptar.
+
+Lectura multimodal:
+- CNN visual: 68.8/100 (Alta, confianza 81.9%).
+- MLP tabular: 96.7/100 (Alta, confianza 94.0%).
+- Reseñas/NLP: 97.9/100 (Alta, confianza 78.6%).
+- Fusión tardía: 87.8/100 (Recomendado, confianza 84.8%).
+
+Fortalezas comerciales:
+- Ubicación: ubicación céntrica o conveniente y Barranco como entorno atractivo.
+- Limpieza y cuidado: limpieza del departamento.
+- Host/atención: apoyo para resolver dudas o inconvenientes y amabilidad del anfitrión o del equipo (host Diana Rosa; Superhost: Sí).
+- Percepción textual: 95.8% positiva y emoción predominante Satisfacción.
+
+Riesgos o puntos de revisión:
+- No aparecen quejas repetidas en las reseñas usadas, pero conviene validar ruido y estado visual antes de escalar la publicación.
+
+Datos operativos:
+- Ficha comercial: capacidad 4 huéspedes; rating 4.96 / 5; precio S/ 140 por noche.
+- Precio/valor: comodidad y equipamiento que respaldan el valor.
+- Cobertura textual: 11 reseña(s) revisada(s) para cubrir categorías comerciales.
+
+Próximo paso:
+- Mantener monitoreo de reseñas y validar manualmente cualquier punto no cubierto por la evidencia.",ollama-rag,llama3.1:8b,10,11,5,True,True,True,

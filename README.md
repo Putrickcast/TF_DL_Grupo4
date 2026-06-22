@@ -17,7 +17,7 @@ La interfaz integra los tres modulos exigidos por el trabajo: CNN visual, MLP ta
 - Scores de resenas/sentimiento: `public/data/review-sentiment.json`.
 - Manifest de fotos reales: `public/data/image-manifest.json`.
 - Fuente original del dataset: `C:\TF_DL\G4_mod_finale.xlsx`.
-- Evidencia tecnica LLM/RAG: `docs/llm-rag/TF_Chatbot_RAG_Ollama_v6_eval_automatica.ipynb`.
+- Evidencia tecnica LLM/RAG: `docs/llm-rag/TF_Chatbot_RAG_Ollama_v9_app_integrada_CNN_MLP.ipynb`.
 
 ## Flujo LLM/RAG
 

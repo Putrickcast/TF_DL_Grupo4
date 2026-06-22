@@ -18,7 +18,7 @@ Este proyecto corresponde al Trabajo Final del curso de Deep Learning. La aplica
 
 El presente archivo documenta el componente **LLM/RAG**, que ya fue validado previamente en el notebook:
 
-`TF_Chatbot_RAG_Ollama_v6_eval_automatica.ipynb`
+`TF_Chatbot_RAG_Ollama_v9_app_integrada_CNN_MLP.ipynb`
 
 El notebook funciona como evidencia técnica en Python/Jupyter. La demo Angular + Node + Ollama funciona como interfaz visual del módulo.
 
@@ -186,7 +186,7 @@ Esto evita que respuestas antiguas parezcan referirse al nuevo listing.
 
 ## 9. Evaluación del módulo LLM/RAG
 
-El notebook `TF_Chatbot_RAG_Ollama_v6_eval_automatica.ipynb` valida el módulo con 8 preguntas funcionales:
+El notebook `TF_Chatbot_RAG_Ollama_v9_app_integrada_CNN_MLP.ipynb` valida el módulo con preguntas funcionales:
 
 1. ¿El departamento es bueno para trabajar remoto?
 2. ¿Hay quejas frecuentes en las reseñas?
@@ -375,7 +375,7 @@ public/data/listings.json
 Y usar este archivo junto con el notebook como referencia:
 
 ```text
-docs/llm-rag/TF_Chatbot_RAG_Ollama_v6_eval_automatica.ipynb
+docs/llm-rag/TF_Chatbot_RAG_Ollama_v9_app_integrada_CNN_MLP.ipynb
 docs/llm-rag/LLM_RAG_REFERENCIA.md
 ```
 
