@@ -67,6 +67,7 @@ export interface ScoreFactor {
   label: string;
   value: number;
   detail: string;
+  displayValue?: string;
 }
 
 export interface ModelScore {
@@ -103,6 +104,38 @@ export interface ImageManifest {
     maxImagesPerListing: number;
   };
   listings: Record<string, ListingImageManifestEntry>;
+}
+
+export interface CnnScoreEntry {
+  score: number;
+  label: 'Alta' | 'Media' | 'Baja';
+  confidence: number;
+  nImagenesPredTotal: number;
+  nImagenesPredEncimaMediana: number;
+  nImagenesPredDebajoMediana: number;
+  propImagenesPredEncimaMediana: number;
+  propImagenesPredDebajoMediana: number;
+  probAltaPromedio: number;
+}
+
+export interface CnnScores {
+  meta: {
+    generatedAt: string;
+    source: string;
+    model: string;
+    scoreField: string;
+    scoreMeaning: string;
+    scoreFormula: string;
+    labelThresholds: {
+      altaMin: number;
+      mediaMin: number;
+    };
+    confidenceMetric: string;
+    confidence: number;
+    testF1Macro: number;
+    validationF1Macro: number;
+  };
+  listings: Record<string, CnnScoreEntry>;
 }
 
 export interface FusionWeights {

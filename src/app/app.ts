@@ -3,6 +3,7 @@ import { Component, HostListener, OnDestroy, OnInit, computed, signal } from '@a
 import { FormsModule } from '@angular/forms';
 import {
   ChatResult,
+  CnnScores,
   ImageManifest,
   ImageAnalysis,
   Listing,
@@ -73,6 +74,7 @@ export class App implements OnInit, OnDestroy {
   readonly chatError = signal('');
   readonly activeSection = signal('datos');
   readonly imageManifest = signal<ImageManifest | null>(null);
+  readonly cnnScores = signal<CnnScores | null>(null);
   readonly listingImages = signal<ImageAnalysis[]>([]);
   readonly imageLoadError = signal('');
   readonly imageDownloadLoading = signal(false);
@@ -107,6 +109,45 @@ export class App implements OnInit, OnDestroy {
   readonly visionImages = computed(() => this.listingImages());
 
   readonly visionScore = computed<ModelScore | null>(() => {
+    const listing = this.selectedListing();
+    const cnnScore = listing ? this.cnnScores()?.listings[listing.id] : null;
+    if (cnnScore) {
+      return {
+        score: cnnScore.score,
+        confidence: cnnScore.confidence,
+        label: cnnScore.label,
+        factors: [
+          {
+            label: 'Fotos clase alta',
+            value: roundOne(cnnScore.propImagenesPredEncimaMediana * 100),
+            detail: `${cnnScore.nImagenesPredEncimaMediana} de ${cnnScore.nImagenesPredTotal} fotos`,
+            displayValue: `${cnnScore.nImagenesPredEncimaMediana}/${cnnScore.nImagenesPredTotal}`,
+          },
+          {
+            label: 'Fotos clase media',
+            value: roundOne(cnnScore.propImagenesPredDebajoMediana * 100),
+            detail: `${cnnScore.nImagenesPredDebajoMediana} de ${cnnScore.nImagenesPredTotal} fotos`,
+            displayValue: `${cnnScore.nImagenesPredDebajoMediana}/${cnnScore.nImagenesPredTotal}`,
+          },
+          {
+            label: 'Prob. alta promedio',
+            value: roundOne(cnnScore.probAltaPromedio * 100),
+            detail: 'promedio de probabilidad CNN',
+          },
+          {
+            label: 'Fotos evaluadas',
+            value: 100,
+            detail: `${cnnScore.nImagenesPredTotal} fotos procesadas por la CNN`,
+            displayValue: `${cnnScore.nImagenesPredTotal}`,
+          },
+        ],
+        notes: [
+          'Score CNN = proporcion de fotos clasificadas por encima de la mediana visual.',
+          'Confianza basada en F1 macro de validacion del modelo final estable.',
+        ],
+      };
+    }
+
     const images = this.visionImages();
     if (images.length === 0) {
       return {
@@ -193,8 +234,14 @@ export class App implements OnInit, OnDestroy {
         throw new Error(`No se pudo cargar image-manifest.json (${imageManifestResponse.status})`);
       }
       const imageManifest = (await imageManifestResponse.json()) as ImageManifest;
+      const cnnScoresResponse = await fetch('data/cnn-scores.json');
+      if (!cnnScoresResponse.ok) {
+        throw new Error(`No se pudo cargar cnn-scores.json (${cnnScoresResponse.status})`);
+      }
+      const cnnScores = (await cnnScoresResponse.json()) as CnnScores;
       this.dataset.set(dataset);
       this.imageManifest.set(imageManifest);
+      this.cnnScores.set(cnnScores);
       const cohort = buildCohortStats(dataset.listings);
       const initialListing =
         [...dataset.listings].sort(
@@ -399,6 +446,16 @@ export class App implements OnInit, OnDestroy {
       return 'good';
     }
     if (score >= 50) {
+      return 'watch';
+    }
+    return 'bad';
+  }
+
+  labelClass(label: string): string {
+    if (label === 'Alta' || label === 'Recomendado') {
+      return 'good';
+    }
+    if (label === 'Media' || label === 'Revisar') {
       return 'watch';
     }
     return 'bad';

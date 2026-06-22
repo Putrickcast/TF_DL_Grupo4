@@ -166,17 +166,17 @@
                 <span class="icon-eye"></span>
                 <h2>Vision CNN</h2>
               </div>
-              <p>Baseline visual reemplazable por CNN entrenada</p>
+              <p>Modelo CNN entrenado sobre fotos del alojamiento</p>
               <div class="score-line">
                 <strong>{{ displayScore(vision.score) }}</strong>
-                <span [class]="scoreClass(vision.score)">{{ vision.label }}</span>
+                <span [class]="labelClass(vision.label)">{{ vision.label }}</span>
               </div>
               <div class="factor-list">
                 @for (factor of vision.factors; track factor.label) {
                   <div class="factor-row">
                     <span>{{ factor.label }}</span>
                     <div class="meter"><i [style.width.%]="factor.value"></i></div>
-                    <strong>{{ displayScore(factor.value) }}</strong>
+                    <strong>{{ factor.displayValue ?? displayScore(factor.value) }}</strong>
                   </div>
                 }
               </div>
@@ -251,7 +251,6 @@
                   <img [src]="image.previewUrl" [alt]="image.name" />
                   <figcaption>
                     {{ image.name }}
-                    <strong>{{ displayScore(image.score) }}</strong>
                   </figcaption>
                 </figure>
               }
