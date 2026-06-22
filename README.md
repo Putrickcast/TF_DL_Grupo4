@@ -2,7 +2,7 @@
 
 Demo multimodal para el Trabajo Final de Deep Learning: evaluacion de listados Airbnb en Barranco, Lima.
 
-La interfaz esta enfocada en mostrar el modulo LLM/chatbot RAG ya validado en notebook Python/Jupyter. El notebook se conserva como evidencia tecnica del desarrollo, mientras esta demo Angular + Node + Ollama funciona como interfaz visual y punto de integracion futura para MLP y CNN.
+La interfaz integra los tres modulos exigidos por el trabajo: CNN visual, MLP tabular y LLM/chatbot RAG. Los notebooks se conservan como evidencia tecnica del entrenamiento y evaluacion, mientras la demo Angular + Node + Ollama muestra los scores finales, la fusion multimodal y las respuestas del chatbot para cada alojamiento.
 
 ## Arquitectura
 
@@ -12,9 +12,12 @@ La interfaz esta enfocada en mostrar el modulo LLM/chatbot RAG ya validado en no
 - Endpoint chatbot: `POST http://127.0.0.1:8787/api/rag-chat`.
 - LLM local: Ollama con `llama3.1:8b`.
 - Dataset procesado: `public/data/listings.json`.
+- Scores CNN: `public/data/cnn-scores.json`.
+- Scores MLP: `public/data/mlp-scores.json`.
+- Scores de resenas/sentimiento: `public/data/review-sentiment.json`.
+- Manifest de fotos reales: `public/data/image-manifest.json`.
 - Fuente original del dataset: `C:\TF_DL\G4_mod_finale.xlsx`.
-- Evidencia tecnica del modulo LLM/RAG:
-  `docs/llm-rag/TF_Chatbot_RAG_Ollama_v6_eval_automatica.ipynb`.
+- Evidencia tecnica LLM/RAG: `docs/llm-rag/TF_Chatbot_RAG_Ollama_v6_eval_automatica.ipynb`.
 
 ## Flujo LLM/RAG
 
@@ -28,9 +31,31 @@ La interfaz esta enfocada en mostrar el modulo LLM/chatbot RAG ya validado en no
 
 Si Ollama falla, la app usa fallback extractivo local y lo marca visualmente como `Fallback extractivo`.
 
-Los scores tecnicos del recuperador no se envian a Ollama como parte del contexto semantico.
-La respuesta del chatbot no debe mencionar `score`, `similitud`, `relevancia` ni porcentajes de recuperacion.
-Esos valores se muestran solo en la seccion visual de evidencia como `relevancia del recuperador`.
+Los scores tecnicos del recuperador no se envian a Ollama como parte del contexto semantico. La respuesta del chatbot no debe mencionar `score`, `similitud`, `relevancia` ni porcentajes de recuperacion. Esos valores se muestran solo en la seccion visual de evidencia como `relevancia del recuperador`.
+
+## Modulos Multimodales
+
+- LLM/chatbot: funcional con RAG por alojamiento seleccionado + Ollama.
+- MLP tabular: integrado desde predicciones del modelo entrenado `MLP 8`, normalizadas para fusion tardia.
+- CNN visual: integrado desde predicciones del modelo entrenado `convnext_tiny` sobre fotos del alojamiento.
+- Resenas/sentimiento: integrado desde el cuadro de control de analisis de sentimiento y ABSA.
+- Fusion multimodal: promedio ponderado con pesos iguales configurados en el dataset.
+
+## Fusion Multimodal
+
+El puntaje final usa el mismo peso para los tres modulos:
+
+```text
+Puntaje final = 0.333 * Vision + 0.333 * Tabular + 0.333 * Resenas
+```
+
+Umbrales de decision:
+
+- `>= 75`: Recomendado.
+- `50-74`: Revisar.
+- `< 50`: No recomendado.
+
+La confianza final se calcula con la misma fusion de pesos iguales a partir de las confianzas de CNN, MLP y resenas.
 
 ## Ejecutar La Demo
 
@@ -95,7 +120,7 @@ Debe mostrar `ok: true`, `model: llama3.1:8b` y `ollamaReachable: true`.
 En la interfaz, pregunta por ejemplo:
 
 ```text
-¿Qué opinan los huéspedes sobre la limpieza y la ubicación?
+Que opinan los huespedes sobre la limpieza y la ubicacion?
 ```
 
 La respuesta debe mostrar:
@@ -103,7 +128,7 @@ La respuesta debe mostrar:
 - `Modo: ollama-rag`
 - `Modelo: llama3.1:8b`
 - Datos de ficha usados
-- Reseñas recuperadas como evidencia
+- Resenas recuperadas como evidencia
 - Nota de recuperacion RAG
 - En la evidencia visual, los porcentajes aparecen etiquetados como `relevancia del recuperador`
 
@@ -120,13 +145,6 @@ Si muestra `extractive-fallback`, revisa que Ollama este abierto y que el modelo
 ```bash
 ollama pull llama3.1:8b
 ```
-
-## Modulos Multimodales
-
-- LLM/chatbot: funcional con RAG por alojamiento seleccionado + Ollama.
-- MLP tabular: integrado desde predicciones del modelo entrenado y normalizado para fusion tardia.
-- CNN visual: pendiente de integrar modelo entrenado; la demo muestra analisis visual heuristico.
-- Fusion multimodal: baseline demostrativo con pesos configurados en el dataset.
 
 ## Preparar Datos Desde Excel
 

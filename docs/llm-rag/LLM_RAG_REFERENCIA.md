@@ -283,15 +283,15 @@ score de recuperación
 
 ### 10.5 No presentar placeholders como modelos entrenados
 
-Si MLP o CNN todavía están pendientes, la interfaz debe decir:
+La interfaz actual ya integra salidas entrenadas de MLP y CNN:
 
 ```text
-MLP: pendiente de integración
-CNN: pendiente de integración
-Fusión multimodal: pendiente o baseline demostrativo
+MLP tabular: integrado desde public/data/mlp-scores.json
+CNN visual: integrado desde public/data/cnn-scores.json
+Fusion multimodal: pesos iguales para Vision, Tabular y Resenas
 ```
 
-No debe afirmarse que un modelo está entrenado si solo existe una regla o placeholder.
+Si en el futuro falta alguno de esos archivos, la interfaz debe mostrar un estado de error o fallback explicito, sin presentar una regla temporal como modelo entrenado.
 
 ---
 
@@ -392,4 +392,4 @@ La demo debe demostrar que:
 5. Se visualizan fuentes usadas.
 6. El modo reportado es `ollama-rag`.
 7. El modelo reportado es `llama3.1:8b`.
-8. La app queda lista para integrar MLP y CNN.
+8. La app muestra MLP, CNN y LLM/RAG integrados en una fusion multimodal.

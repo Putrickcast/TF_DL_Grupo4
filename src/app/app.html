@@ -379,23 +379,6 @@
                               </blockquote>
                             }
                           </div>
-                          @if ((chat.retrievedEvidence?.length ?? 0) > 0) {
-                            <details class="message-sources candidate-sources">
-                              <summary>
-                                Reseñas recuperadas no usadas para responder · {{ reviewCountLabel(chat.retrievedEvidence?.length ?? 0, 'reseña', 'reseñas') }}
-                              </summary>
-                              <div class="evidence-list">
-                                @for (item of chat.retrievedEvidence; track item.review.index) {
-                                  <blockquote>
-                                    "{{ item.review.excerpt ?? shortText(item.review.text, 160) }}"
-                                    <footer>
-                                      Review {{ item.review.index }} · relevancia del recuperador {{ item.relevance }}%
-                                    </footer>
-                                  </blockquote>
-                                }
-                              </div>
-                            </details>
-                          }
                         </details>
                       }
                     </div>
@@ -551,8 +534,8 @@
               <div>
                 <dt>Visión</dt>
                 <dd>
-                  Promedio ponderado de iluminación, contraste, nitidez, color natural y cobertura útil.
-                  Las fotos se guardan localmente en public/img/&lt;ID Airbnb&gt;/ desde la URL canónica.
+                  CNN convnext_tiny entrenada sobre fotos del alojamiento. El score representa la proporción
+                  de fotos clasificadas por encima de la mediana visual.
                 </dd>
               </div>
               <div>
@@ -565,14 +548,14 @@
               <div>
                 <dt>Reseñas</dt>
                 <dd>
-                  Sentimiento léxico en español + cobertura de temas frecuentes: limpieza, ubicación, anfitrión,
-                  comodidad, precio y fotos.
+                  Score textual desde sentimiento, emociones y ABSA. El chatbot RAG usa la ficha del anuncio
+                  y reseñas recuperadas como evidencia.
                 </dd>
               </div>
               <div>
                 <dt>Fusión tardía</dt>
                 <dd>
-                  Puntaje final = 0.40 × Visión + 0.30 × Tabular + 0.30 × Reseñas.
+                  Puntaje final = 0.333 × Visión + 0.333 × Tabular + 0.333 × Reseñas.
                   &gt;=75 Recomendado, 50-74 Revisar, &lt;50 No recomendado.
                 </dd>
               </div>
@@ -584,15 +567,16 @@
             <ul>
               <li>LLM/chatbot: funcional con RAG por alojamiento seleccionado + Ollama local.</li>
               <li>MLP tabular: integrado desde predicciones del modelo entrenado y normalizado para fusión tardía.</li>
-              <li>CNN visual: pendiente de integrar modelo entrenado; la demo muestra análisis visual heurístico.</li>
-              <li>Fusión multimodal: baseline demostrativo con pesos configurados en el dataset.</li>
+              <li>CNN visual: integrado desde predicciones del modelo convnext_tiny entrenado.</li>
+              <li>Reseñas: integradas desde sentimiento, emociones y ABSA por alojamiento.</li>
+              <li>Fusión multimodal: pesos iguales para Visión, Tabular y Reseñas.</li>
             </ul>
             <div class="academic-note">
               <strong>Conclusión para exposición</strong>
               <p>
-                El módulo LLM/RAG está funcional con Ollama y el MLP tabular ya usa predicciones
-                del modelo entrenado. La salida MLP se lleva a 0-100 para combinarla con CNN y
-                reseñas en la fusión final.
+                La aplicación combina CNN, MLP y RAG/LLM en una fusión tardía auditable.
+                Cada módulo genera un score normalizado a 0-100 y la decisión final usa
+                el mismo peso para las tres modalidades.
               </p>
             </div>
             @if (meta(); as dataMeta) {

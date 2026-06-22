@@ -7,18 +7,27 @@ El prototipo responde al enunciado del PDF `Contexto_TF.pdf`: una empresa que ad
 - Vision/CNN para calidad fotografica del anuncio.
 - MLP/tabular para estimar desempeno esperado desde atributos del listado.
 - LLM/chatbot para responder preguntas con descripcion y resenas.
+- Analisis de sentimiento/ABSA para convertir resenas en score textual.
 - Fusion tardia para entregar una sola decision comercial.
 
 ## Fuentes
 
 - `C:/TF_DL/G4_mod_finale.xlsx`
-  - Hoja `Principal`: 51 listados con atributos de ubicacion, host, precio, rating y disponibilidad.
+  - Hoja `Principal`: 52 listados con atributos de ubicacion, host, precio, rating y disponibilidad.
   - Hoja `Reviews`: resenas en espanol por `ID Airbnb`.
 - `public/data/listings.json`
   - Generado con `scripts/extract_dataset.py`.
-  - Contiene 51 listados y 589 resenas cruzadas con IDs presentes en `Principal`.
+  - Contiene 52 listados y 1592 resenas cruzadas con IDs presentes en `Principal`.
+- `public/data/image-manifest.json`
+  - Referencia 520 fotos locales, 10 por cada listado.
+- `public/data/cnn-scores.json`
+  - Contiene la salida integrada del modelo CNN `convnext_tiny` por alojamiento.
+- `public/data/mlp-scores.json`
+  - Contiene la salida integrada del modelo `MLP 8` por alojamiento.
+- `public/data/review-sentiment.json`
+  - Contiene sentimiento, emociones y ABSA para alimentar el score textual.
 
-Nota importante: el Excel no trae fotos. Se agrego `scripts/fetch_airbnb_images.py` para extraer las imagenes publicas referenciadas por la URL canonica de cada anuncio y guardarlas localmente en `public/img/<ID Airbnb>/`.
+Nota importante: el Excel no trae fotos. Se agrego `scripts/fetch_airbnb_images.py` para extraer imagenes publicas referenciadas por la URL canonica de cada anuncio y guardarlas localmente en `public/img/<ID Airbnb>/`.
 
 ## Fotos reales
 
@@ -28,34 +37,32 @@ Metodo: lectura de la pagina publica canonica de Airbnb, extraccion de URLs publ
 
 Manifiesto: `public/data/image-manifest.json`.
 
-Cobertura actual: 147 imagenes reales descargadas para 49 de 51 listados. Dos listados no expusieron imagenes publicas recuperables con este metodo y quedan marcados como sin foto real.
+Cobertura actual: 520 imagenes reales referenciadas en el manifest, con 10 fotos por cada uno de los 52 listados.
 
 ## Reglas de scoring
 
 ### Vision/CNN
 
-La demo calcula un score reproducible sobre pixeles de las fotos reales cargadas desde `public/img/<ID Airbnb>/`:
+La demo usa la salida integrada del modelo CNN entrenado sobre fotos del alojamiento:
 
-- Iluminacion: penaliza fotos muy oscuras o sobreexpuestas.
-- Contraste: mide variabilidad de luminancia.
-- Nitidez: aproxima detalle por energia de bordes.
-- Color natural: favorece saturacion moderada.
-- Cobertura util: penaliza pixeles extremos casi negros o quemados.
+- Archivo integrado: `public/data/cnn-scores.json`.
+- Modelo final: `convnext_tiny`.
+- Score visual: proporcion de fotos clasificadas por la CNN por encima de la mediana de calidad visual, normalizada a escala 0-100.
+- Confianza: F1 macro de validacion del modelo final estable.
 
-Puntaje visual = promedio ponderado de esas metricas. En una version con CNN pre-entrenada, esta funcion se reemplaza por la salida normalizada del modelo.
+Metricas registradas: F1 macro en test `79.01` y F1 macro en validacion `81.92`.
 
 ### MLP tabular
 
-Baseline de demo para representar la regresion MLP:
+La demo usa predicciones del modelo MLP entrenado:
 
-- Rating actual.
-- Precio competitivo contra el grupo Barranco.
-- Numero de amenidades.
-- Senales de confianza del host.
-- Tiempo como host.
-- Instant booking y politica de cancelacion.
+- Archivo integrado: `public/data/mlp-scores.json`.
+- Modelo final: `MLP 8`.
+- Score tabular: calificacion esperada por el MLP normalizada a escala 0-100.
+- Variables seleccionadas: gimnasio, amenidades por huesped y camas por huesped.
+- Confianza usada en fusion: `94`.
 
-Todos los atributos se normalizan a 0-1 y producen un score 0-100.
+Metricas registradas en validacion: MAE `0.060257`, RMSE `0.070535` y R2 `0.197673`.
 
 ### LLM / resenas
 
@@ -68,14 +75,14 @@ La demo usa RAG local con Ollama cuando el servidor `server/rag-server.mjs` esta
 
 Si Ollama no esta instalado, no esta corriendo o el modelo no esta descargado, la app conserva un fallback extractivo. Ese fallback no reemplaza al LLM: solo mantiene la demo funcional y muestra explicitamente `Fallback extractivo`.
 
-El LLM no calcula scores. Vision, tabular, resenas y fusion siguen siendo reglas deterministicas para que el puntaje sea auditable.
+El LLM no calcula los scores CNN ni MLP. El chatbot explica con evidencia recuperada, mientras vision, tabular, resenas y fusion permanecen auditables mediante archivos JSON.
 
 ### Fusion tardia
 
 Puntaje final:
 
 ```text
-0.40 * Vision + 0.30 * Tabular + 0.30 * Resenas
+0.333 * Vision + 0.333 * Tabular + 0.333 * Resenas
 ```
 
 Umbrales:
@@ -83,6 +90,8 @@ Umbrales:
 - `>= 75`: Recomendado.
 - `50-74`: Revisar.
 - `< 50`: No recomendado.
+
+La confianza final se calcula con los mismos pesos iguales usando las confianzas de los tres modulos.
 
 ## Como ejecutar
 
@@ -111,7 +120,7 @@ pnpm approve-builds --all
 
 ## Archivos principales
 
-- `src/app/scoring.ts`: reglas comentadas de Vision, MLP, LLM y fusion.
-- `src/app/app.ts`: estado de Angular, carga de datos, analisis de imagenes y flujo de chatbot.
+- `src/app/scoring.ts`: fusion de scores y reglas de fallback cuando falta una fuente.
+- `src/app/app.ts`: estado de Angular, carga de scores CNN/MLP/resenas y flujo de chatbot.
 - `src/app/app.html`: demo visual y secciones de evidencia.
 - `scripts/extract_dataset.py`: preparacion auditable del JSON desde el Excel.

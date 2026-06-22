@@ -360,9 +360,8 @@ export function fuseScores(
   /*
    * Late fusion baseline from the slides:
    * each modality produces a 0-100 score, then the business decision is a
-   * weighted average. Vision receives 40% because listing quality depends heavily
-   * on photos; tabular and reviews receive 30% each to keep attributes and guest
-   * evidence balanced.
+   * weighted average. The three modalities receive the same weight so the final
+   * recommendation balances photos, structured attributes, and guest evidence.
    */
   const score =
     visionScore * weights.vision + tabularScore * weights.tabular + reviewScore * weights.reviews;

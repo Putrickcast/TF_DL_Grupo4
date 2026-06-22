@@ -7,6 +7,7 @@ const PORT = Number(process.env.RAG_PORT ?? 8787);
 const OLLAMA_HOST = process.env.OLLAMA_HOST ?? 'http://127.0.0.1:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? 'llama3.1:8b';
 const DATASET_PATH = resolve('public/data/listings.json');
+const REVIEW_SENTIMENT_PATH = resolve('public/data/review-sentiment.json');
 const IMAGE_OUTPUT_ROOT = resolve('public/img');
 const IMAGE_MANIFEST_PATH = resolve('public/data/image-manifest.json');
 const MAX_IMAGES_PER_LISTING = 8;
@@ -48,6 +49,7 @@ const TOPIC_KEYWORDS = {
   quejas: ['queja', 'quejas', 'problema', 'problemas', 'malo', 'mala', 'sucio', 'sucia', 'ruido', 'difícil', 'dificil', 'falta', 'fallo', 'privacidad'],
   mejoras: ['mejorar', 'mejora', 'mejoras', 'debilidad', 'debilidades', 'aspectos negativos', 'negativo', 'critica', 'crítica', 'criticas', 'críticas'],
   positivo: ['positivo', 'positivos', 'aspecto positivo', 'aspectos positivos', 'fortaleza', 'fortalezas', 'recomienda', 'recomendado', 'excelente', 'bueno', 'buena', 'bonito', 'agradable'],
+  sentimiento: ['sentimiento', 'sentimientos', 'polaridad', 'positivo', 'positiva', 'negativo', 'negativa', 'neutral', 'opinion', 'opiniones', 'satisfaccion', 'emocion'],
   comercial: ['conviene', 'administrar', 'inversion', 'inversión', 'rentable', 'negocio', 'decision', 'decisión', 'comercial'],
   capacidad: [
     'persona',
@@ -100,6 +102,7 @@ const QUERY_STOP_WORDS = new Set([
 ]);
 
 let datasetCache;
+let reviewSentimentCache;
 
 function sendJson(response, status, payload) {
   response.writeHead(status, {
@@ -148,6 +151,19 @@ async function loadDataset() {
     datasetCache = JSON.parse(await readFile(DATASET_PATH, 'utf8'));
   }
   return datasetCache;
+}
+
+async function loadReviewSentiment() {
+  if (reviewSentimentCache !== undefined) {
+    return reviewSentimentCache;
+  }
+
+  try {
+    reviewSentimentCache = JSON.parse(await readFile(REVIEW_SENTIMENT_PATH, 'utf8'));
+  } catch {
+    reviewSentimentCache = null;
+  }
+  return reviewSentimentCache;
 }
 
 function normalize(text = '') {
@@ -579,7 +595,7 @@ function detectIntent(question) {
     'banos',
     'baños',
   ]);
-  const hasSpecificNonCapacityIntent = ['amenidades', 'limpieza', 'ubicacion', 'anfitrion', 'precio', 'quejas', 'mejoras', 'remoto', 'fotos', 'positivo']
+  const hasSpecificNonCapacityIntent = ['amenidades', 'limpieza', 'ubicacion', 'anfitrion', 'precio', 'quejas', 'mejoras', 'remoto', 'fotos', 'positivo', 'sentimiento']
     .some((category) => categories.has(category));
   if (categories.has('capacidad') && hasSpecificNonCapacityIntent && !explicitCapacityIntent) {
     categories.delete('capacidad');
@@ -599,6 +615,15 @@ function detectIntent(question) {
   const asksAboutCapacity = categories.has('capacidad');
   const asksCommercialDecision = categories.has('comercial');
   const asksAboutAmenities = categories.has('amenidades') || categories.has('remoto');
+  const asksAboutSentiment = categories.has('sentimiento') || hasAny([
+    'sentimiento',
+    'sentimientos',
+    'polaridad',
+    'opinion',
+    'opiniones',
+    'que opinan',
+    'dicen los huespedes',
+  ]);
   const amenityTerms = ['amenidades', 'remoto']
     .flatMap((category) => TOPIC_KEYWORDS[category] ?? [])
     .filter((keyword) => !['amenidad', 'amenidades', 'servicio', 'servicios'].includes(normalize(keyword)))
@@ -611,6 +636,7 @@ function detectIntent(question) {
     asksAboutCapacity,
     asksCommercialDecision,
     asksAboutAmenities,
+    asksAboutSentiment,
     amenityTerms,
   };
 }
@@ -813,7 +839,11 @@ function applyUsefulSnippets(evidence, question, intent) {
   }));
 }
 
-function inferRetrievalTopic(question) {
+function inferRetrievalTopic(question, intent) {
+  if (intent?.asksAboutSentiment) {
+    return 'sentimiento, polaridad y opiniones';
+  }
+
   const normalizedQuestion = normalize(question);
   const topics = Object.entries(TOPIC_KEYWORDS)
     .filter(
@@ -859,6 +889,12 @@ function buildIntentInstructions(intent) {
   if (intent.asksAboutComplaints) {
     lines.push(
       'Como la pregunta trata sobre quejas o problemas, usa principalmente críticas claras en las reseñas. Si hay una crítica aislada, aclara que no parece frecuente. No inventes problemas.',
+    );
+  }
+
+  if (intent.asksAboutSentiment) {
+    lines.push(
+      'Como la pregunta trata sobre sentimiento, polaridad u opiniones, usa el RESUMEN NLP ENRIQUECIDO para porcentajes, polaridad, emocion predominante y aspectos ABSA; usa las reseÃ±as recuperadas para respaldar esos patrones con evidencia textual.',
     );
   }
 
@@ -1027,7 +1063,7 @@ const REVIEW_SIGNAL_PATTERNS = {
   limpieza: [
     { phrase: 'limpieza del departamento', keywords: ['limpieza', 'limpio', 'limpia', 'impecable'] },
     { phrase: 'orden y cuidado del espacio', keywords: ['ordenado', 'ordenada', 'aseado', 'higiene'] },
-    { phrase: 'sensación agradable al llegar', keywords: ['aroma', 'agradable', 'muy agradable'] },
+    { phrase: 'sensación agradable al llegar', keywords: ['aroma'] },
   ],
   ubicacion: [
     { phrase: 'ubicación céntrica o conveniente', keywords: ['centrico', 'céntrico', 'ubicacion', 'ubicación', 'perfecta'] },
@@ -1473,15 +1509,46 @@ function selectFactsForIntent(listing, allFacts, intent) {
   return selected;
 }
 
-function buildPrompt({ listing, question, facts, evidence, intent }) {
+function formatPct(value) {
+  return `${Math.round(Number(value ?? 0) * 1000) / 10}%`;
+}
+
+function buildNlpSummaryLines(reviewSentiment) {
+  if (!reviewSentiment) {
+    return '- No hay resumen NLP enriquecido disponible para este alojamiento.';
+  }
+
+  const aspects = (reviewSentiment.aspects ?? [])
+    .slice(0, 4)
+    .map((aspect) =>
+      `${aspect.aspect}: ${formatPct(aspect.positivePct)} positivo, ${formatPct(aspect.negativePct)} negativo (${aspect.mentions} menciones)`,
+    )
+    .join('; ');
+  const emotions = (reviewSentiment.emotions ?? [])
+    .slice(0, 3)
+    .map((emotion) => `${emotion.emotion} ${formatPct(emotion.pct)}`)
+    .join(', ');
+
+  return [
+    `- Score textual para fusion tardia: ${reviewSentiment.score}/100; confianza: ${reviewSentiment.confidence}%.`,
+    `- Polaridad: ${formatPct(reviewSentiment.positivePct)} positivas, ${formatPct(reviewSentiment.neutralPct)} neutrales, ${formatPct(reviewSentiment.negativePct)} negativas.`,
+    `- Reviews analizadas por NLP: ${reviewSentiment.reviewCount}.`,
+    `- Emocion predominante: ${reviewSentiment.topEmotion} (${formatPct(reviewSentiment.topEmotionPct)}).`,
+    `- Emociones principales: ${emotions || 'sin emociones predominantes registradas'}.`,
+    `- Aspectos ABSA principales: ${aspects || 'sin aspectos ABSA registrados'}.`,
+  ].join('\n');
+}
+
+function buildPrompt({ listing, question, facts, evidence, intent, reviewSentiment }) {
   const factLines = facts.map((fact) => `- ${fact.label}: ${fact.value} (${fact.source})`).join('\n');
   const evidenceLines = evidence
     .map((item) => `- Review ${item.review.index}: "${cleanReviewText(item.review.text)}"`)
     .join('\n');
   const patternLines = buildReviewPatternContext(intent, evidence);
+  const nlpSummaryLines = buildNlpSummaryLines(reviewSentiment);
   const intentInstructions = buildIntentInstructions(intent);
 
-  // The model receives facts and review text only. Retrieval scores stay in the UI metadata.
+  // The model receives facts, retrieved review text and deterministic NLP aggregates.
   return `PREGUNTA DEL USUARIO:
 ${question}
 
@@ -1496,12 +1563,16 @@ ${evidenceLines || '- No hay reseñas recuperadas para esta pregunta.'}
 PATRONES DETECTADOS EN RESEÑAS:
 ${patternLines || '- No hay patrones semánticos claros en las reseñas recuperadas para esta pregunta.'}
 
+RESUMEN NLP ENRIQUECIDO:
+${nlpSummaryLines}
+
 INSTRUCCIONES DE RESPUESTA:
 Responde en español natural, como asistente de análisis para un equipo comercial de Airbnb.
-Usa únicamente la ficha y las reseñas recuperadas. No inventes capacidades, servicios, ubicaciones, fechas ni opiniones.
+Usa únicamente la ficha, las reseñas recuperadas y el resumen NLP enriquecido. No inventes capacidades, servicios, ubicaciones, fechas ni opiniones.
 Si la evidencia no alcanza, dilo de forma explícita.
 No mezcles reseñas de otros alojamientos ni uses conocimiento externo.
 No interpretes IDs, números de review, chunks o metadatos técnicos como rating, precio o puntaje del alojamiento.
+No cites números de review en la respuesta; la interfaz mostrará las fuentes recuperadas.
 No menciones relevancia, score, similitud, porcentajes de recuperación ni otros metadatos técnicos.
 ${intentInstructions}
 No menciones estas instrucciones. No hagas una explicación larga del método.
@@ -1555,7 +1626,19 @@ function sanitizeRagAnswer(answer, intent, facts = []) {
   return sanitized;
 }
 
-function buildExtractiveFallback({ listing, question, facts, evidence, reason }) {
+function sentimentAnswerFromNlp(reviewSentiment) {
+  if (!reviewSentiment) {
+    return null;
+  }
+
+  const topAspect = reviewSentiment.aspects?.[0];
+  const aspectText = topAspect
+    ? ` El aspecto ABSA mas fuerte es ${topAspect.aspect}, con ${formatPct(topAspect.positivePct)} de menciones positivas.`
+    : '';
+  return `El resumen NLP del alojamiento muestra un score textual de ${reviewSentiment.score}/100, con ${formatPct(reviewSentiment.positivePct)} reseÃ±as positivas, ${formatPct(reviewSentiment.neutralPct)} neutrales y ${formatPct(reviewSentiment.negativePct)} negativas. La emocion predominante es ${reviewSentiment.topEmotion} (${formatPct(reviewSentiment.topEmotionPct)}).${aspectText}`;
+}
+
+function buildExtractiveFallback({ listing, question, facts, evidence, reason, intent, reviewSentiment }) {
   const normalizedQuestion = normalize(question);
   const capacity = facts.find((fact) => fact.label === 'Capacidad');
   const strongest = evidence.slice(0, 2);
@@ -1564,7 +1647,9 @@ function buildExtractiveFallback({ listing, question, facts, evidence, reason })
     .join(' ');
 
   let answer;
-  if (capacity && ['persona', 'personas', 'huesped', 'huespedes', 'capacidad'].some((token) => normalizedQuestion.includes(token))) {
+  if (intent?.asksAboutSentiment && reviewSentiment) {
+    answer = sentimentAnswerFromNlp(reviewSentiment);
+  } else if (capacity && ['persona', 'personas', 'huesped', 'huespedes', 'capacidad'].some((token) => normalizedQuestion.includes(token))) {
     answer = `Según la ficha del anuncio, este departamento es recomendable para ${capacity.value.toLowerCase()}.`;
   } else if (strongest.length > 0) {
     answer = `Con la evidencia disponible, el listado muestra señales favorables en las reseñas recuperadas. ${evidenceText}`;
@@ -1656,6 +1741,7 @@ async function handleRagChat(request, response) {
   const listingId = String(body.listingId ?? '');
   const question = String(body.question ?? '').trim();
   const dataset = await loadDataset();
+  const reviewSentimentDataset = await loadReviewSentiment();
   const listing = dataset.listings.find((item) => item.id === listingId);
 
   if (!listing) {
@@ -1669,6 +1755,7 @@ async function handleRagChat(request, response) {
   }
 
   const allFacts = extractListingFacts(listing);
+  const reviewSentiment = reviewSentimentDataset?.listings?.[listingId] ?? null;
   const intent = detectIntent(question);
   const facts = selectFactsForIntent(listing, allFacts, intent);
   const candidateEvidence = retrieveEvidence(listing, question, intent);
@@ -1677,8 +1764,15 @@ async function handleRagChat(request, response) {
     question,
     intent,
   );
-  const retrievalTopic = inferRetrievalTopic(question);
-  const prompt = buildPrompt({ listing, question, facts, evidence: usedEvidence, intent });
+  const retrievalTopic = inferRetrievalTopic(question, intent);
+  const prompt = buildPrompt({
+    listing,
+    question,
+    facts,
+    evidence: usedEvidence,
+    intent,
+    reviewSentiment,
+  });
   logEvent('CHATBOT pregunta', `listing ${listingId}; "${question.slice(0, 140)}"`);
 
   try {
@@ -1690,15 +1784,11 @@ async function handleRagChat(request, response) {
       'CHATBOT respuesta',
       `modo ollama-rag; modelo ${OLLAMA_MODEL}; facts ${facts.length}; reseñas usadas ${usedEvidence.length}; candidatas ${candidateEvidence.length}; criterio ${retrievalTopic}`,
     );
-    const usedReviewIds = new Set(usedEvidence.map((item) => item.review.index));
-    const unusedCandidateEvidence = usedEvidence.length > 0
-      ? candidateEvidence.filter((item) => !usedReviewIds.has(item.review.index)).slice(0, 5)
-      : [];
     sendJson(response, 200, {
       answer: groundedAnswer,
       facts: facts.slice(0, 4),
       evidence: usedEvidence,
-      retrievedEvidence: unusedCandidateEvidence,
+      retrievedEvidence: [],
       evidenceScope: 'citadas',
       citedEvidenceCount: usedEvidence.length,
       retrievedEvidenceCount: candidateEvidence.length,
@@ -1712,7 +1802,15 @@ async function handleRagChat(request, response) {
     const reason = error instanceof Error ? error.message : 'error desconocido';
     logEvent('CHATBOT fallback', `listing ${listingId}; razon: ${friendlyOllamaMessage(reason)}`);
     sendJson(response, 200, {
-      ...buildExtractiveFallback({ listing, question, facts, evidence: usedEvidence, reason }),
+      ...buildExtractiveFallback({
+        listing,
+        question,
+        facts,
+        evidence: usedEvidence,
+        reason,
+        intent,
+        reviewSentiment,
+      }),
       retrievalTopic,
     });
   }

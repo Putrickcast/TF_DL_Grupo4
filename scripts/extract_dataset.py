@@ -193,10 +193,10 @@ def build_dataset() -> dict[str, Any]:
             "unmatchedListingCount": len(listings) - matched,
             "district": "Barranco",
             "imagePolicy": (
-                "El Excel no trae fotos. La app permite cargar imágenes reales y muestra "
-                "un thumbnail sintético solo como demo, no como sustituto del set real."
+                "El Excel no trae fotos. Las fotos reales se referencian desde "
+                "public/data/image-manifest.json y se guardan localmente en public/img/<ID Airbnb>/."
             ),
-            "fusionWeights": {"vision": 0.4, "tabular": 0.3, "reviews": 0.3},
+            "fusionWeights": {"vision": 1 / 3, "tabular": 1 / 3, "reviews": 1 / 3},
             "decisionThresholds": {
                 "recommended": 75,
                 "review": 50,

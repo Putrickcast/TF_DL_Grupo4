@@ -523,7 +523,7 @@ export class App implements OnInit, OnDestroy {
       },
       decision: fusion,
       modalityScores: { vision, tabular, reviews },
-      note: 'Export académico de demo. El score visual usa fotos reales locales cuando existen para el ID seleccionado.',
+      note: 'Export academico de demo. La decision integra CNN visual, MLP tabular, resenas/ABSA y fusion tardia con pesos iguales.',
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
