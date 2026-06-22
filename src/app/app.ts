@@ -9,6 +9,7 @@ import {
   Listing,
   ListingDataset,
   ModelScore,
+  MlpScores,
   ScoreFactor,
 } from './models';
 import {
@@ -75,6 +76,7 @@ export class App implements OnInit, OnDestroy {
   readonly activeSection = signal('datos');
   readonly imageManifest = signal<ImageManifest | null>(null);
   readonly cnnScores = signal<CnnScores | null>(null);
+  readonly mlpScores = signal<MlpScores | null>(null);
   readonly listingImages = signal<ImageAnalysis[]>([]);
   readonly imageLoadError = signal('');
   readonly imageDownloadLoading = signal(false);
@@ -96,9 +98,74 @@ export class App implements OnInit, OnDestroy {
     return listings.find((listing) => listing.id === this.selectedId()) ?? listings[0] ?? null;
   });
 
-  readonly tabularScore = computed(() => {
+  readonly tabularScore = computed<ModelScore | null>(() => {
     const listing = this.selectedListing();
-    return listing ? scoreTabular(listing, this.cohort()) : null;
+    const mlpScore = listing ? this.mlpScores()?.listings[listing.id] : null;
+    const mlpMeta = this.mlpScores()?.meta;
+    if (!listing) {
+      return null;
+    }
+    if (!mlpScore || !mlpMeta) {
+      return scoreTabular(listing, this.cohort());
+    }
+
+    const score = mlpScore.score;
+    const observedRating = mlpScore.observedRating;
+    const residual = mlpScore.residual;
+    const absoluteError = mlpScore.absoluteError;
+    const observedDetail =
+      observedRating === null ? 'Sin rating observado' : `${observedRating.toFixed(2)} / 5`;
+    const residualDetail =
+      residual === null
+        ? 'No evaluable sin rating real'
+        : `${residual >= 0 ? '+' : ''}${residual.toFixed(2)}`;
+    const fitScore =
+      absoluteError === null
+        ? 0
+        : roundOne((1 - Math.min(absoluteError / 0.3, 1)) * 100);
+    const coverageLabel =
+      mlpScore.set === 'inferencia_sin_rating' ? 'Inferencia sin rating' : 'Evaluado con rating';
+
+    return {
+      score,
+      confidence: mlpMeta.confidence,
+      label:
+        score >= mlpMeta.labelThresholds.altaMin
+          ? 'Alta'
+          : score >= mlpMeta.labelThresholds.mediaMin
+          ? 'Media'
+          : 'Baja',
+      factors: [
+        {
+          label: 'Rating esperado',
+          value: score,
+          detail: `${mlpScore.predictedRating.toFixed(2)} / 5`,
+          displayValue: mlpScore.predictedRating.toFixed(2),
+        },
+        {
+          label: 'Rating observado',
+          value: observedRating === null ? 0 : roundOne((observedRating / 5) * 100),
+          detail: observedDetail,
+          displayValue: observedRating === null ? 'Sin rating' : observedRating.toFixed(2),
+        },
+        {
+          label: 'Cercanía al rating',
+          value: fitScore,
+          detail: residualDetail,
+          displayValue: residual === null ? 'No evaluable' : `${fitScore.toFixed(1)}%`,
+        },
+        {
+          label: 'Cobertura',
+          value: mlpScore.set === 'inferencia_sin_rating' ? 70 : 100,
+          detail: coverageLabel,
+          displayValue: mlpScore.set === 'inferencia_sin_rating' ? 'Inferencia' : 'Evaluado',
+        },
+      ],
+      notes: [
+        `${mlpMeta.model} entrenado sobre ${mlpMeta.selectedFeatures.join(', ')}.`,
+        `MAE val. ${mlpMeta.validationMAE.toFixed(3)} | R2 val. ${mlpMeta.validationR2.toFixed(3)}`,
+      ],
+    };
   });
 
   readonly reviewScore = computed(() => {
@@ -217,7 +284,7 @@ export class App implements OnInit, OnDestroy {
       })
       .map((listing) => ({
         listing,
-        tabularScore: scoreTabular(listing, this.cohort()).score,
+        tabularScore: this.mlpScores()?.listings[listing.id]?.score ?? scoreTabular(listing, this.cohort()).score,
       }))
       .sort((a, b) => b.tabularScore - a.tabularScore);
   });
@@ -239,13 +306,21 @@ export class App implements OnInit, OnDestroy {
         throw new Error(`No se pudo cargar cnn-scores.json (${cnnScoresResponse.status})`);
       }
       const cnnScores = (await cnnScoresResponse.json()) as CnnScores;
+      const mlpScoresResponse = await fetch('data/mlp-scores.json');
+      if (!mlpScoresResponse.ok) {
+        throw new Error(`No se pudo cargar mlp-scores.json (${mlpScoresResponse.status})`);
+      }
+      const mlpScores = (await mlpScoresResponse.json()) as MlpScores;
       this.dataset.set(dataset);
       this.imageManifest.set(imageManifest);
       this.cnnScores.set(cnnScores);
+      this.mlpScores.set(mlpScores);
       const cohort = buildCohortStats(dataset.listings);
       const initialListing =
         [...dataset.listings].sort(
-          (a, b) => scoreTabular(b, cohort).score - scoreTabular(a, cohort).score,
+          (a, b) =>
+            (mlpScores.listings[b.id]?.score ?? scoreTabular(b, cohort).score) -
+            (mlpScores.listings[a.id]?.score ?? scoreTabular(a, cohort).score),
         )[0] ?? null;
       this.selectedId.set(initialListing?.id ?? '');
       if (initialListing) {

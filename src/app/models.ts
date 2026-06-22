@@ -138,6 +138,42 @@ export interface CnnScores {
   listings: Record<string, CnnScoreEntry>;
 }
 
+export interface MlpScoreEntry {
+  observedRating: number | null;
+  predictedRating: number;
+  observedNormalized: number | null;
+  predictedNormalized: number;
+  score: number;
+  residual: number | null;
+  absoluteError: number | null;
+  set: 'evaluado' | 'inferencia_sin_rating';
+}
+
+export interface MlpScores {
+  meta: {
+    generatedFrom: string;
+    model: string;
+    runId: string;
+    target: string;
+    scoreField: string;
+    scoreMeaning: string;
+    ratingField: string;
+    selectedFeatures: string[];
+    validationMAE: number;
+    validationRMSE: number;
+    validationR2: number;
+    allRowsMAE: number;
+    allRowsRMSE: number;
+    labelThresholds: {
+      altaMin: number;
+      mediaMin: number;
+    };
+    confidence: number;
+    listingCount: number;
+  };
+  listings: Record<string, MlpScoreEntry>;
+}
+
 export interface FusionWeights {
   vision: number;
   tabular: number;

@@ -578,7 +578,7 @@ textarea {
 
 .factor-row {
   display: grid;
-  grid-template-columns: 112px minmax(70px, 1fr) 42px;
+  grid-template-columns: 112px minmax(70px, 1fr) minmax(54px, max-content);
   gap: 10px;
   align-items: center;
   font-size: 12px;

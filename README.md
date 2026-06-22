@@ -124,7 +124,7 @@ ollama pull llama3.1:8b
 ## Modulos Multimodales
 
 - LLM/chatbot: funcional con RAG por alojamiento seleccionado + Ollama.
-- MLP tabular: pendiente de integrar modelo entrenado; la demo muestra un baseline auditable.
+- MLP tabular: integrado desde predicciones del modelo entrenado y normalizado para fusion tardia.
 - CNN visual: pendiente de integrar modelo entrenado; la demo muestra analisis visual heuristico.
 - Fusion multimodal: baseline demostrativo con pesos configurados en el dataset.
 
