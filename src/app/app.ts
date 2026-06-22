@@ -10,6 +10,7 @@ import {
   ListingDataset,
   ModelScore,
   MlpScores,
+  ReviewSentimentScores,
   ScoreFactor,
 } from './models';
 import {
@@ -77,6 +78,7 @@ export class App implements OnInit, OnDestroy {
   readonly imageManifest = signal<ImageManifest | null>(null);
   readonly cnnScores = signal<CnnScores | null>(null);
   readonly mlpScores = signal<MlpScores | null>(null);
+  readonly reviewSentiment = signal<ReviewSentimentScores | null>(null);
   readonly listingImages = signal<ImageAnalysis[]>([]);
   readonly imageLoadError = signal('');
   readonly imageDownloadLoading = signal(false);
@@ -170,7 +172,8 @@ export class App implements OnInit, OnDestroy {
 
   readonly reviewScore = computed(() => {
     const listing = this.selectedListing();
-    return listing ? scoreReviews(listing) : null;
+    const sentiment = listing ? this.reviewSentiment()?.listings[listing.id] : undefined;
+    return listing ? scoreReviews(listing, sentiment) : null;
   });
 
   readonly visionImages = computed(() => this.listingImages());
@@ -311,10 +314,12 @@ export class App implements OnInit, OnDestroy {
         throw new Error(`No se pudo cargar mlp-scores.json (${mlpScoresResponse.status})`);
       }
       const mlpScores = (await mlpScoresResponse.json()) as MlpScores;
+      const reviewSentiment = await this.loadReviewSentiment();
       this.dataset.set(dataset);
       this.imageManifest.set(imageManifest);
       this.cnnScores.set(cnnScores);
       this.mlpScores.set(mlpScores);
+      this.reviewSentiment.set(reviewSentiment);
       const cohort = buildCohortStats(dataset.listings);
       const initialListing =
         [...dataset.listings].sort(
@@ -332,6 +337,19 @@ export class App implements OnInit, OnDestroy {
       this.loadError.set(error instanceof Error ? error.message : 'Error desconocido al cargar datos');
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  private async loadReviewSentiment(): Promise<ReviewSentimentScores | null> {
+    try {
+      const response = await fetch('data/review-sentiment.json');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return (await response.json()) as ReviewSentimentScores;
+    } catch (error) {
+      console.warn('No se pudo cargar review-sentiment.json; usando fallback lexico.', error);
+      return null;
     }
   }
 

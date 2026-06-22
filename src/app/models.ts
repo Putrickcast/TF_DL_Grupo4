@@ -174,6 +174,47 @@ export interface MlpScores {
   listings: Record<string, MlpScoreEntry>;
 }
 
+export interface ReviewSentimentAspect {
+  aspect: string;
+  positivePct: number;
+  neutralPct: number;
+  negativePct: number;
+  mentions: number;
+}
+
+export interface ReviewSentimentEmotion {
+  emotion: string;
+  pct: number;
+  count: number;
+}
+
+export interface ReviewSentimentEntry {
+  positivePct: number;
+  neutralPct: number;
+  negativePct: number;
+  reviewCount: number;
+  score: number;
+  confidence: number;
+  averageRawScore: number | null;
+  topEmotion: string;
+  topEmotionPct: number;
+  emotions: ReviewSentimentEmotion[];
+  aspects: ReviewSentimentAspect[];
+}
+
+export interface ReviewSentimentScores {
+  meta: {
+    generatedFrom: string;
+    sourceSheets: string[];
+    scoreField: string;
+    scoreMeaning: string;
+    confidenceMeaning: string;
+    listingCount: number;
+    aspectRows: number;
+  };
+  listings: Record<string, ReviewSentimentEntry>;
+}
+
 export interface FusionWeights {
   vision: number;
   tabular: number;

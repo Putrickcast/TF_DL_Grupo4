@@ -7,6 +7,7 @@ import {
   Listing,
   ModelScore,
   Review,
+  ReviewSentimentEntry,
   ScoreFactor,
 } from './models';
 
@@ -167,7 +168,55 @@ export function scoreTabular(listing: Listing, cohort: CohortStats): ModelScore 
   };
 }
 
-export function scoreReviews(listing: Listing): ModelScore {
+export function scoreReviews(
+  listing: Listing,
+  enrichedSentiment?: ReviewSentimentEntry,
+): ModelScore {
+  if (enrichedSentiment) {
+    const topAspect = enrichedSentiment.aspects[0] ?? null;
+    const factors: ScoreFactor[] = [
+      {
+        label: 'Positivas',
+        value: roundOne(enrichedSentiment.positivePct * 100),
+        detail: `${enrichedSentiment.reviewCount} reviews analizadas`,
+        displayValue: `${roundOne(enrichedSentiment.positivePct * 100).toFixed(1)}%`,
+      },
+      {
+        label: 'Alertas',
+        value: roundOne(enrichedSentiment.negativePct * 100),
+        detail: 'Reviews con sentimiento negativo',
+        displayValue: `${roundOne(enrichedSentiment.negativePct * 100).toFixed(1)}%`,
+      },
+      {
+        label: enrichedSentiment.topEmotion,
+        value: roundOne(enrichedSentiment.topEmotionPct * 100),
+        detail: 'Emocion predominante',
+        displayValue: `${roundOne(enrichedSentiment.topEmotionPct * 100).toFixed(1)}%`,
+      },
+    ];
+
+    if (topAspect) {
+      factors.push({
+        label: shortAspectLabel(topAspect.aspect),
+        value: roundOne(topAspect.positivePct * 100),
+        detail: `${topAspect.mentions} menciones ABSA`,
+        displayValue: `${roundOne(topAspect.positivePct * 100).toFixed(1)}%`,
+      });
+    }
+
+    return {
+      score: enrichedSentiment.score,
+      confidence: enrichedSentiment.confidence,
+      label:
+        enrichedSentiment.score >= 75 ? 'Alta' : enrichedSentiment.score >= 50 ? 'Media' : 'Baja',
+      factors,
+      notes: [
+        `${enrichedSentiment.reviewCount} reviews analizadas · ${enrichedSentiment.aspects.length} aspectos ABSA`,
+        'Incluye emociones y ABSA por aspecto desde Comentarios_Analizados y Detalle_ABSA.',
+      ],
+    };
+  }
+
   const reviews = listing.reviews;
   if (reviews.length === 0) {
     return {
@@ -430,6 +479,23 @@ function topicLabel(topic: string): string {
     fotos: 'Fotos',
   };
   return labels[topic] ?? topic;
+}
+
+function shortAspectLabel(aspect: string): string {
+  const normalized = normalize(aspect);
+  if (normalized.includes('ubicacion')) {
+    return 'Ubicacion';
+  }
+  if (normalized.includes('anfitrion') || normalized.includes('atencion')) {
+    return 'Anfitrion';
+  }
+  if (normalized.includes('instalaciones') || normalized.includes('amenities')) {
+    return 'Amenities';
+  }
+  if (normalized.includes('wifi')) {
+    return 'Wifi';
+  }
+  return aspect.length > 14 ? `${aspect.slice(0, 14)}...` : aspect;
 }
 
 function expandQuestionTokens(tokens: Set<string>): Set<string> {

@@ -214,7 +214,7 @@
                 <span class="icon-chat"></span>
                 <h2>LLM Reseñas</h2>
               </div>
-              <p>Sentimiento, temas y evidencia textual</p>
+              <p>Resumen NLP desde reseñas</p>
               <div class="score-line">
                 <strong>{{ displayScore(reviews.score) }}</strong>
                 <span [class]="scoreClass(reviews.score)">{{ reviews.label }}</span>
@@ -224,11 +224,11 @@
                   <div class="factor-row">
                     <span>{{ factor.label }}</span>
                     <div class="meter"><i [style.width.%]="factor.value"></i></div>
-                    <strong>{{ displayScore(factor.value) }}</strong>
+                    <strong>{{ factor.displayValue ?? displayScore(factor.value) }}</strong>
                   </div>
                 }
               </div>
-              <footer>Confianza {{ displayScore(reviews.confidence) }}%</footer>
+              <footer>Confianza {{ displayScore(reviews.confidence) }}% &middot; {{ reviews.notes[0] }}</footer>
             </article>
           }
         </section>
